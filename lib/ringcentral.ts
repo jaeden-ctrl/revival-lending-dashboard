@@ -49,6 +49,15 @@ export async function getAccessToken(): Promise<string> {
 
     const data = await res.json();
     tokenCache = { accessToken: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
+
+    // Auto-rotate: save the new refresh token back to Netlify so it never expires
+    if (data.refresh_token && data.refresh_token !== refreshToken) {
+      persistRefreshToken(data.refresh_token).catch(() => {
+        // Non-fatal — log but don't break the request
+        console.warn("[RC] Failed to persist new refresh token to Netlify");
+      });
+    }
+
     return tokenCache.accessToken;
   })().finally(() => {
     refreshInFlight = null;
@@ -60,6 +69,25 @@ export async function getAccessToken(): Promise<string> {
 async function fetchWithToken(url: string): Promise<Response> {
   const token = await getAccessToken();
   return fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+}
+
+/**
+ * Persists a new refresh token to Netlify env vars so the token auto-rotates
+ * and never expires as long as the dashboard is used within the token window.
+ */
+async function persistRefreshToken(newToken: string): Promise<void> {
+  const netlifyToken = process.env.NETLIFY_TOKEN;
+  const siteId = process.env.NETLIFY_SITE_ID;
+  if (!netlifyToken || !siteId) return;
+
+  await fetch(`https://api.netlify.com/api/v1/sites/${siteId}/env/RC_REFRESH_TOKEN`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${netlifyToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ values: [{ context: "all", value: newToken }] }),
+  });
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
