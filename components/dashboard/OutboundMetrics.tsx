@@ -9,6 +9,7 @@ import {
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionSkeleton } from "@/components/ui/Loader";
 import type { OutboundKpis, LOOutboundStats, CallDetail } from "@/types/kpi";
+import type { DashboardKpis } from "@/app/api/ringcentral/dashboard/route";
 
 const GOLD = "#C48B1F";
 const SURFACE_2 = "#1A1A1A";
@@ -30,11 +31,11 @@ function fmtPhone(raw: string) {
   return raw;
 }
 
-async function fetchOutbound(): Promise<OutboundKpis> {
-  const res = await fetch("/api/ringcentral/outbound");
+async function fetchDashboard(): Promise<DashboardKpis> {
+  const res = await fetch("/api/ringcentral/dashboard");
   if (!res.ok) {
     const e = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(e.error ?? "Failed to fetch outbound data");
+    throw new Error(e.error ?? "Failed to fetch call data");
   }
   return res.json();
 }
@@ -110,12 +111,13 @@ function LORow({ lo, isLast }: { lo: LOOutboundStats; isLast: boolean }) {
 
 export function OutboundMetrics() {
   const queryClient = useQueryClient();
-  const { data, isLoading, isError, error } = useQuery<OutboundKpis>({
-    queryKey: ["rc-outbound"],
-    queryFn: fetchOutbound,
+  const { data: dashboard, isLoading, isError, error } = useQuery<DashboardKpis>({
+    queryKey: ["rc-dashboard"],
+    queryFn: fetchDashboard,
     staleTime: 60 * 60 * 1000,
     refetchInterval: 60 * 60 * 1000,
   });
+  const data = dashboard?.outbound ?? null;
 
   return (
     <section>
@@ -131,7 +133,7 @@ export function OutboundMetrics() {
           )}
         </div>
         <button
-          onClick={() => queryClient.invalidateQueries({ queryKey: ["rc-outbound"] })}
+          onClick={() => queryClient.invalidateQueries({ queryKey: ["rc-dashboard"] })}
           className="w-8 h-8 flex items-center justify-center rounded-lg transition-all text-sm"
           style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", color: "var(--color-muted)" }}
           onMouseEnter={(e) => { e.currentTarget.style.borderColor = GOLD; e.currentTarget.style.color = GOLD; }}
