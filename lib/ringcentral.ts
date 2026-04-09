@@ -1,7 +1,15 @@
 /**
  * RingCentral API client.
  * Handles token refresh, queue discovery, and detailed call log fetching.
+ *
+ * Token strategy:
+ *   - Access tokens cached in Netlify Blobs (shared across ALL function instances)
+ *   - This prevents the "Token not found" error caused by multiple instances
+ *     simultaneously consuming the single-use refresh token
+ *   - In-memory cache avoids Blobs reads within the same warm instance
  */
+
+import { getStore } from "@netlify/blobs";
 
 const RC_BASE = "https://platform.ringcentral.com";
 
@@ -11,16 +19,54 @@ interface TokenCache {
   accessToken: string;
   expiresAt: number;
 }
-let tokenCache: TokenCache | null = null;
-// In-flight refresh promise — all concurrent callers share one request
+
+// Instance-level memory cache (fastest path)
+let memCache: TokenCache | null = null;
+// In-flight refresh — prevents duplicate refreshes within the same instance
 let refreshInFlight: Promise<string> | null = null;
 
+function getBlobStore() {
+  return getStore({
+    name: "ringcentral",
+    token: process.env.NETLIFY_TOKEN!,
+    siteID: process.env.NETLIFY_SITE_ID!,
+  });
+}
+
+async function getSharedToken(): Promise<TokenCache | null> {
+  try {
+    const store = getBlobStore();
+    const raw = await store.get("access_token", { type: "text" });
+    if (!raw) return null;
+    return JSON.parse(raw) as TokenCache;
+  } catch {
+    return null;
+  }
+}
+
+async function saveSharedToken(cache: TokenCache): Promise<void> {
+  try {
+    const store = getBlobStore();
+    await store.set("access_token", JSON.stringify(cache));
+  } catch {
+    // Non-fatal — fall back to direct refresh next time
+  }
+}
+
 export async function getAccessToken(): Promise<string> {
-  if (tokenCache && Date.now() < tokenCache.expiresAt - 60_000) {
-    return tokenCache.accessToken;
+  // 1. In-memory cache (same instance)
+  if (memCache && Date.now() < memCache.expiresAt - 60_000) {
+    return memCache.accessToken;
   }
 
-  // If a refresh is already in progress, wait for it instead of firing another
+  // 2. Shared Blobs cache (across all instances)
+  const shared = await getSharedToken();
+  if (shared && Date.now() < shared.expiresAt - 60_000) {
+    memCache = shared;
+    return shared.accessToken;
+  }
+
+  // 3. Need to refresh — coalesce within this instance
   if (refreshInFlight) return refreshInFlight;
 
   refreshInFlight = (async () => {
@@ -34,11 +80,10 @@ export async function getAccessToken(): Promise<string> {
 
     const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
-    // Retry up to 4 times with exponential backoff on 429
-    let lastError = "";
+    // Retry on 429 with backoff
     for (let attempt = 0; attempt < 4; attempt++) {
       if (attempt > 0) {
-        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt - 1))); // 1s, 2s, 4s
+        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
       }
 
       const res = await fetch(`${RC_BASE}/restapi/oauth/token`, {
@@ -50,10 +95,7 @@ export async function getAccessToken(): Promise<string> {
         body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
       });
 
-      if (res.status === 429) {
-        lastError = "Rate limited (429)";
-        continue; // retry
-      }
+      if (res.status === 429) continue;
 
       if (!res.ok) {
         const text = await res.text();
@@ -61,19 +103,26 @@ export async function getAccessToken(): Promise<string> {
       }
 
       const data = await res.json();
-      tokenCache = { accessToken: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
+      const newCache: TokenCache = {
+        accessToken: data.access_token,
+        expiresAt: Date.now() + data.expires_in * 1000,
+      };
 
-      // Auto-rotate: save the new refresh token back to Netlify so it never expires
+      // Save to both memory and shared Blobs
+      memCache = newCache;
+      await saveSharedToken(newCache);
+
+      // Persist new refresh token to Netlify env so it never expires
       if (data.refresh_token && data.refresh_token !== refreshToken) {
-        persistRefreshToken(data.refresh_token).catch(() => {
-          console.warn("[RC] Failed to persist new refresh token to Netlify");
-        });
+        persistRefreshToken(data.refresh_token).catch(() =>
+          console.warn("[RC] Failed to persist new refresh token")
+        );
       }
 
-      return tokenCache.accessToken;
+      return newCache.accessToken;
     }
 
-    throw new Error(`RingCentral token refresh failed after retries: ${lastError}`);
+    throw new Error("RingCentral token refresh failed: rate limited after retries");
   })().finally(() => {
     refreshInFlight = null;
   });
