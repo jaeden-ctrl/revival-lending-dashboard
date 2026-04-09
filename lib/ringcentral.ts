@@ -12,38 +12,49 @@ interface TokenCache {
   expiresAt: number;
 }
 let tokenCache: TokenCache | null = null;
+// In-flight refresh promise — all concurrent callers share one request
+let refreshInFlight: Promise<string> | null = null;
 
 export async function getAccessToken(): Promise<string> {
   if (tokenCache && Date.now() < tokenCache.expiresAt - 60_000) {
     return tokenCache.accessToken;
   }
 
-  const clientId = process.env.RC_CLIENT_ID;
-  const clientSecret = process.env.RC_CLIENT_SECRET;
-  const refreshToken = process.env.RC_REFRESH_TOKEN;
+  // If a refresh is already in progress, wait for it instead of firing another
+  if (refreshInFlight) return refreshInFlight;
 
-  if (!clientId || !clientSecret || !refreshToken) {
-    throw new Error("RingCentral credentials not configured");
-  }
+  refreshInFlight = (async () => {
+    const clientId = process.env.RC_CLIENT_ID;
+    const clientSecret = process.env.RC_CLIENT_SECRET;
+    const refreshToken = process.env.RC_REFRESH_TOKEN;
 
-  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
-  const res = await fetch(`${RC_BASE}/restapi/oauth/token`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
+    if (!clientId || !clientSecret || !refreshToken) {
+      throw new Error("RingCentral credentials not configured");
+    }
+
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+    const res = await fetch(`${RC_BASE}/restapi/oauth/token`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${credentials}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`RingCentral token refresh failed: ${res.status} ${text}`);
+    }
+
+    const data = await res.json();
+    tokenCache = { accessToken: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
+    return tokenCache.accessToken;
+  })().finally(() => {
+    refreshInFlight = null;
   });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`RingCentral token refresh failed: ${res.status} ${text}`);
-  }
-
-  const data = await res.json();
-  tokenCache = { accessToken: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
-  return tokenCache.accessToken;
+  return refreshInFlight;
 }
 
 async function fetchWithToken(url: string): Promise<Response> {
