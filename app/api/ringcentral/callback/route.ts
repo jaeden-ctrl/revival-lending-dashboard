@@ -1,5 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 
+async function saveTokenToNetlify(token: string): Promise<void> {
+  const netlifyToken = process.env.NETLIFY_TOKEN;
+  const siteId = process.env.NETLIFY_SITE_ID;
+  if (!netlifyToken || !siteId) return;
+
+  await fetch(`https://api.netlify.com/api/v1/sites/${siteId}/env/RC_REFRESH_TOKEN`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${netlifyToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ values: [{ context: "all", value: token }] }),
+  });
+}
+
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const error = request.nextUrl.searchParams.get("error");
@@ -19,7 +34,10 @@ export async function GET(request: NextRequest) {
 
   const clientId = process.env.RC_CLIENT_ID!;
   const clientSecret = process.env.RC_CLIENT_SECRET!;
-  const redirectUri = "http://localhost:3000/api/ringcentral/callback";
+
+  const host = request.headers.get("host") ?? "localhost:3000";
+  const protocol = host.includes("localhost") ? "http" : "https";
+  const redirectUri = `${protocol}://${host}/api/ringcentral/callback`;
 
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
@@ -49,21 +67,32 @@ export async function GET(request: NextRequest) {
 
   const refreshToken = data.refresh_token;
 
+  // Auto-save to Netlify env — no manual copy/paste needed
+  let saved = false;
+  try {
+    await saveTokenToNetlify(refreshToken);
+    saved = true;
+  } catch {
+    saved = false;
+  }
+
   return new NextResponse(`
     <!DOCTYPE html>
     <html>
     <head><title>RingCentral Connected</title></head>
     <body style="background:#0a0a0a;color:#f5f5f5;font-family:monospace;padding:40px;max-width:700px">
-      <h2 style="color:#C9A84C">RingCentral Connected!</h2>
-      <p>Copy the refresh token below and add it to your <code>.env.local</code> file:</p>
-      <p style="color:#6b6b6b;font-size:13px">RC_REFRESH_TOKEN=</p>
-      <div style="background:#141414;border:1px solid #C9A84C;border-radius:8px;padding:16px;word-break:break-all;color:#C9A84C;font-size:14px">
-        ${refreshToken}
-      </div>
-      <p style="margin-top:24px;color:#6b6b6b;font-size:13px">
-        Also add this to your Netlify environment variables as <code>RC_REFRESH_TOKEN</code>.
-        Then restart your dev server.
+      <h2 style="color:#C48B1F;font-family:system-ui">RingCentral Connected!</h2>
+      ${saved
+        ? `<p style="color:#4CAF7D">✓ Refresh token automatically saved to Netlify. No action needed.</p>`
+        : `<p style="color:#e05252">Could not auto-save to Netlify. Copy the token below into your Netlify env vars as <code>RC_REFRESH_TOKEN</code>:</p>
+           <div style="background:#141414;border:1px solid #C48B1F;border-radius:8px;padding:16px;word-break:break-all;color:#C48B1F;font-size:13px;margin-top:12px">${refreshToken}</div>`
+      }
+      <p style="margin-top:32px;color:#6b6b6b;font-size:13px">
+        The dashboard will now work. Tokens auto-rotate on every use — you won't need to do this again.
       </p>
+      <a href="/dashboard" style="display:inline-block;margin-top:24px;background:#C48B1F;color:#0a0a0a;padding:10px 24px;border-radius:8px;text-decoration:none;font-family:system-ui;font-weight:600;font-size:14px">
+        Go to Dashboard →
+      </a>
     </body>
     </html>
   `, { headers: { "Content-Type": "text/html" } });
