@@ -33,32 +33,47 @@ export async function getAccessToken(): Promise<string> {
     }
 
     const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
-    const res = await fetch(`${RC_BASE}/restapi/oauth/token`, {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${credentials}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
-    });
 
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`RingCentral token refresh failed: ${res.status} ${text}`);
-    }
+    // Retry up to 4 times with exponential backoff on 429
+    let lastError = "";
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt - 1))); // 1s, 2s, 4s
+      }
 
-    const data = await res.json();
-    tokenCache = { accessToken: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
-
-    // Auto-rotate: save the new refresh token back to Netlify so it never expires
-    if (data.refresh_token && data.refresh_token !== refreshToken) {
-      persistRefreshToken(data.refresh_token).catch(() => {
-        // Non-fatal — log but don't break the request
-        console.warn("[RC] Failed to persist new refresh token to Netlify");
+      const res = await fetch(`${RC_BASE}/restapi/oauth/token`, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${credentials}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
       });
+
+      if (res.status === 429) {
+        lastError = "Rate limited (429)";
+        continue; // retry
+      }
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`RingCentral token refresh failed: ${res.status} ${text}`);
+      }
+
+      const data = await res.json();
+      tokenCache = { accessToken: data.access_token, expiresAt: Date.now() + data.expires_in * 1000 };
+
+      // Auto-rotate: save the new refresh token back to Netlify so it never expires
+      if (data.refresh_token && data.refresh_token !== refreshToken) {
+        persistRefreshToken(data.refresh_token).catch(() => {
+          console.warn("[RC] Failed to persist new refresh token to Netlify");
+        });
+      }
+
+      return tokenCache.accessToken;
     }
 
-    return tokenCache.accessToken;
+    throw new Error(`RingCentral token refresh failed after retries: ${lastError}`);
   })().finally(() => {
     refreshInFlight = null;
   });
