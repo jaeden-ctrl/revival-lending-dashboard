@@ -35,9 +35,7 @@ export async function GET(request: NextRequest) {
   const clientId = process.env.RC_CLIENT_ID!;
   const clientSecret = process.env.RC_CLIENT_SECRET!;
 
-  const host = request.headers.get("host") ?? "localhost:3000";
-  const protocol = host.includes("localhost") ? "http" : "https";
-  const redirectUri = `${protocol}://${host}/api/ringcentral/callback`;
+  const redirectUri = process.env.RC_REDIRECT_URI ?? "http://localhost:3000/api/ringcentral/callback";
 
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
