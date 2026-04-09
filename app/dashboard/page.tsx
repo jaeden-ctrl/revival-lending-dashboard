@@ -1,5 +1,6 @@
 import { QueryProvider } from "@/components/dashboard/QueryProvider";
-import { CallMetrics } from "@/components/dashboard/CallMetrics";
+import { InboundMetrics } from "@/components/dashboard/InboundMetrics";
+import { OutboundMetrics } from "@/components/dashboard/OutboundMetrics";
 import { LogoutButton } from "@/components/dashboard/LogoutButton";
 
 export default function DashboardPage() {
@@ -34,9 +35,13 @@ export default function DashboardPage() {
 
         {/* Main Content */}
         <main className="px-6 py-8 max-w-7xl mx-auto space-y-12">
-          <CallMetrics />
+          <InboundMetrics />
 
-          {/* Coming Soon Sections */}
+          <div style={{ height: 1, background: "var(--color-border)" }} />
+
+          <OutboundMetrics />
+
+          {/* Coming Soon */}
           <section className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <ComingSoonCard
               title="Lead Pipeline"
@@ -55,41 +60,20 @@ export default function DashboardPage() {
   );
 }
 
-function ComingSoonCard({
-  title,
-  source,
-  description,
-}: {
-  title: string;
-  source: string;
-  description: string;
-}) {
+function ComingSoonCard({ title, source, description }: { title: string; source: string; description: string }) {
   return (
     <div
       className="rounded-xl p-6 flex flex-col gap-2"
-      style={{
-        background: "var(--color-surface)",
-        border: "1px dashed var(--color-border)",
-      }}
+      style={{ background: "var(--color-surface)", border: "1px dashed var(--color-border)" }}
     >
       <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold uppercase tracking-widest" style={{ color: "var(--color-text)" }}>
-          {title}
-        </span>
-        <span
-          className="text-xs px-2 py-0.5 rounded-full uppercase tracking-widest"
-          style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}
-        >
+        <span className="text-sm font-semibold uppercase tracking-widest" style={{ color: "var(--color-text)" }}>{title}</span>
+        <span className="text-xs px-2 py-0.5 rounded-full uppercase tracking-widest" style={{ background: "var(--color-surface-2)", color: "var(--color-muted)" }}>
           {source}
         </span>
       </div>
-      <p className="text-xs" style={{ color: "var(--color-muted)" }}>
-        {description}
-      </p>
-      <span
-        className="text-xs mt-1 font-medium uppercase tracking-wider"
-        style={{ color: "var(--color-gold-dim)" }}
-      >
+      <p className="text-xs" style={{ color: "var(--color-muted)" }}>{description}</p>
+      <span className="text-xs mt-1 font-medium uppercase tracking-wider" style={{ color: "var(--color-gold-dim)" }}>
         Phase 2
       </span>
     </div>

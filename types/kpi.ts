@@ -1,3 +1,68 @@
+// ─── Inbound Queue KPIs ──────────────────────────────────────────────────────
+
+export interface InboundKpis {
+  period: PeriodStats;
+  byLO: LOInboundStats[];
+  hourlyVolume: HourlyVolume[];
+  lastUpdated: string;
+}
+
+export interface PeriodStats {
+  answered: number;
+  missed: number;
+  total: number;
+  avgTalkTimeSec: number;
+}
+
+export interface LOInboundStats {
+  name: string;
+  extensionId: string;
+  answered: number;
+  missed: number;
+  avgTalkTimeSec: number;
+  calls: CallDetail[];
+}
+
+export interface CallDetail {
+  id: string;
+  startTime: string;
+  durationSec: number;
+  result: string; // "Answered" | "Missed" | "Voicemail"
+  queue: string;  // "Get That Bag" | "Fresh Leads"
+  from: string;
+}
+
+// ─── Outbound KPIs ───────────────────────────────────────────────────────────
+
+export interface OutboundKpis {
+  period: OutboundPeriodStats;
+  byLO: LOOutboundStats[];
+  hourlyVolume: HourlyVolume[];
+  lastUpdated: string;
+}
+
+export interface OutboundPeriodStats {
+  total: number;
+  avgTalkTimeSec: number;
+}
+
+export interface LOOutboundStats {
+  name: string;
+  extensionId: string;
+  total: number;
+  avgTalkTimeSec: number;
+  calls: CallDetail[];
+}
+
+// ─── Shared ───────────────────────────────────────────────────────────────────
+
+export interface HourlyVolume {
+  hour: string;
+  calls: number;
+}
+
+// ─── Legacy (kept for /api/ringcentral/calls route) ──────────────────────────
+
 export interface CallKpis {
   today: CallPeriodStats;
   week: CallPeriodStats;
@@ -13,12 +78,7 @@ export interface CallPeriodStats {
   outbound: number;
   missed: number;
   avgDurationSec: number;
-  answerRate: number; // 0–100
-}
-
-export interface HourlyVolume {
-  hour: string; // "9 AM", "10 AM", etc.
-  calls: number;
+  answerRate: number;
 }
 
 export interface RepStats {
