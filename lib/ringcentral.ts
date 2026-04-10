@@ -194,13 +194,16 @@ export async function getUserExtensions(): Promise<RCExtension[]> {
 export async function findQueuesByName(names: string[]): Promise<RCExtension[]> {
   const lower = names.map((n) => n.toLowerCase());
 
-  // RingCentral queues can be type "Department" or "Queue"
-  const res = await fetchWithToken(
-    `${RC_BASE}/restapi/v1.0/account/~/extension?type=Department,Queue&status=Enabled&perPage=250`
-  );
-  if (!res.ok) throw new Error(`Queue fetch failed: ${res.status}`);
-  const data = await res.json();
-  const all = (data.records ?? []) as RCExtension[];
+  // Fetch Department and Queue types separately (RC doesn't support comma-separated types)
+  const [deptRes, queueRes] = await Promise.all([
+    fetchWithToken(`${RC_BASE}/restapi/v1.0/account/~/extension?type=Department&status=Enabled&perPage=250`),
+    fetchWithToken(`${RC_BASE}/restapi/v1.0/account/~/extension?type=Queue&status=Enabled&perPage=250`),
+  ]);
+
+  const deptRecords = deptRes.ok ? ((await deptRes.json()).records ?? []) as RCExtension[] : [];
+  const queueRecords = queueRes.ok ? ((await queueRes.json()).records ?? []) as RCExtension[] : [];
+
+  const all = [...deptRecords, ...queueRecords];
   return all.filter((ext) => lower.includes(ext.name.toLowerCase()));
 }
 
