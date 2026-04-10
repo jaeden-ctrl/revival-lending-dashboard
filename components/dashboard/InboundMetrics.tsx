@@ -74,11 +74,6 @@ function LORow({ lo, isLast }: { lo: LOInboundStats; isLast: boolean }) {
         <td className="py-3 px-3 text-center">
           <span className="text-sm font-semibold" style={{ color: GOLD }}>{lo.answered}</span>
         </td>
-        <td className="py-3 px-3 text-center">
-          <span className="text-sm" style={{ color: lo.missed > 0 ? "var(--color-danger)" : "var(--color-muted)" }}>
-            {lo.missed}
-          </span>
-        </td>
         <td className="py-3 pr-4 pl-3 text-right">
           <span className="text-sm" style={{ color: "var(--color-muted)" }}>
             {fmt(lo.avgTalkTimeSec)}
@@ -88,7 +83,7 @@ function LORow({ lo, isLast }: { lo: LOInboundStats; isLast: boolean }) {
 
       {open && (
         <tr>
-          <td colSpan={4} className="p-0">
+          <td colSpan={3} className="p-0">
             <div
               className="mx-2 mb-2 rounded-lg overflow-hidden"
               style={{ background: "#0F0F0F", border: "1px solid var(--color-border)" }}
@@ -227,7 +222,6 @@ export function InboundMetrics({ queryKey, range, preset }: { queryKey: string; 
                   <tr style={{ borderBottom: "1px solid var(--color-border)" }}>
                     <th className="py-2 pl-4 pr-2 text-left text-xs font-medium uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>Loan Officer</th>
                     <th className="py-2 px-3 text-center text-xs font-medium uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>Ans</th>
-                    <th className="py-2 px-3 text-center text-xs font-medium uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>Miss</th>
                     <th className="py-2 pr-4 pl-3 text-right text-xs font-medium uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>Avg Talk</th>
                   </tr>
                 </thead>

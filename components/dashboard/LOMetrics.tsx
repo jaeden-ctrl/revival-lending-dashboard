@@ -61,21 +61,10 @@ function LOCard({ lo }: { lo: LOInboundStats }) {
         {lo.name}
       </div>
 
-      {/* Answered / Missed */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg p-3 text-center" style={{ background: "#0F0F0F" }}>
-          <div className="text-2xl font-bold tabular-nums" style={{ color: GOLD }}>{lo.answered}</div>
-          <div className="text-xs uppercase tracking-wider mt-1" style={{ color: "var(--color-muted)" }}>Answered</div>
-        </div>
-        <div className="rounded-lg p-3 text-center" style={{ background: "#0F0F0F" }}>
-          <div
-            className="text-2xl font-bold tabular-nums"
-            style={{ color: lo.missed > 0 ? DANGER : "var(--color-muted)" }}
-          >
-            {lo.missed}
-          </div>
-          <div className="text-xs uppercase tracking-wider mt-1" style={{ color: "var(--color-muted)" }}>Missed</div>
-        </div>
+      {/* Answered */}
+      <div className="rounded-lg p-3 text-center" style={{ background: "#0F0F0F" }}>
+        <div className="text-2xl font-bold tabular-nums" style={{ color: GOLD }}>{lo.answered}</div>
+        <div className="text-xs uppercase tracking-wider mt-1" style={{ color: "var(--color-muted)" }}>Answered</div>
       </div>
 
       {/* Avg Talk / Answer Rate */}
@@ -114,7 +103,6 @@ export function LOMetrics({ queryKey, range }: { queryKey: string; range: DateRa
   const chartData = byLO.map((lo) => ({
     name: firstLast(lo.name),
     answered: lo.answered,
-    missed: lo.missed,
   }));
 
   return (
@@ -161,11 +149,6 @@ export function LOMetrics({ queryKey, range }: { queryKey: string; range: DateRa
                   />
                   <Bar dataKey="answered" name="Answered" radius={[4, 4, 0, 0]}>
                     {chartData.map((_, i) => <Cell key={i} fill={GOLD} />)}
-                  </Bar>
-                  <Bar dataKey="missed" name="Missed" radius={[4, 4, 0, 0]}>
-                    {chartData.map((entry, i) => (
-                      <Cell key={i} fill={entry.missed > 0 ? DANGER : GOLD_DIM} fillOpacity={0.4} />
-                    ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
