@@ -77,7 +77,7 @@ export async function GET() {
       const agent = extractAgentFromLegs(call.legs ?? []);
       if (agent) {
         if (!loMap.has(agent.id)) {
-          loMap.set(agent.id, { name: agent.name, extensionId: agent.id, answered: [], missed: 0 });
+          loMap.set(agent.id, { name: agent.id, extensionId: agent.id, answered: [], missed: 0 });
         }
         const lo = loMap.get(agent.id)!;
         if (!isMissed(call.result)) {

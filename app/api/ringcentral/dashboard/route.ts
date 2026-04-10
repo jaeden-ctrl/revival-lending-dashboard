@@ -3,6 +3,7 @@ import {
   getAccessToken,
   getTargetQueues,
   getQueueInboundCalls,
+  getUserExtensions,
   extractAgentFromLegs,
   type RCDetailedCallRecord,
 } from "@/lib/ringcentral";
@@ -89,12 +90,19 @@ export async function GET(request: NextRequest) {
   try {
     await getAccessToken();
 
-    const queues = await getTargetQueues();
+    // Fetch queues and user extensions in parallel
+    const [queues, userExtensions] = await Promise.all([
+      getTargetQueues(),
+      getUserExtensions(),
+    ]);
+
+    // Build ID → name map for agent name lookup (legs don't include names)
+    const agentNames = new Map(userExtensions.map((u) => [String(u.id), u.name]));
 
     const queueCallSets = await Promise.all(
       queues.map(async (q) => {
         const calls = await getQueueInboundCalls(q.id, dateFrom, dateTo);
-        return calls.map((c) => ({ ...c, queueName: q.name }));
+        return calls.map((c) => ({ ...c, queueName: q.name, queueId: q.id }));
       })
     );
 
@@ -103,16 +111,23 @@ export async function GET(request: NextRequest) {
     const missedIn = allInbound.filter((c) => isMissed(c.result));
     const totalInTalk = answeredIn.reduce((s, c) => s + (c.duration ?? 0), 0);
 
-    // Build per-LO stats from queue call legs
-    const loMap = new Map<string, { name: string; extensionId: string; answered: RCDetailedCallRecord[]; missed: number }>();
+    // Build per-LO stats — skip queue's own leg when finding the answering agent
+    const loMap = new Map<string, {
+      name: string; extensionId: string;
+      answered: (RCDetailedCallRecord & { queueName: string })[]; missed: number;
+    }>();
+
     for (const call of allInbound) {
-      const agent = extractAgentFromLegs(call.legs ?? []);
-      if (agent) {
-        if (!loMap.has(agent.id)) loMap.set(agent.id, { name: agent.name, extensionId: agent.id, answered: [], missed: 0 });
-        const lo = loMap.get(agent.id)!;
-        if (!isMissed(call.result)) lo.answered.push(call);
-        else lo.missed++;
+      const agent = extractAgentFromLegs(call.legs ?? [], call.queueId);
+      if (!agent) continue;
+
+      const agentName = agentNames.get(agent.id) ?? agent.id;
+      if (!loMap.has(agent.id)) {
+        loMap.set(agent.id, { name: agentName, extensionId: agent.id, answered: [], missed: 0 });
       }
+      const lo = loMap.get(agent.id)!;
+      if (!isMissed(call.result)) lo.answered.push(call);
+      else lo.missed++;
     }
 
     const byLO: LOInboundStats[] = Array.from(loMap.values())
@@ -128,7 +143,7 @@ export async function GET(request: NextRequest) {
             startTime: c.startTime,
             durationSec: c.duration ?? 0,
             result: "Answered",
-            queue: (c as typeof c & { queueName: string }).queueName ?? "",
+            queue: c.queueName,
             from: c.from?.phoneNumber ?? c.from?.name ?? "Unknown",
           })),
         };

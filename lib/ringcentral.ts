@@ -311,26 +311,24 @@ export async function getExtensionOutboundCalls(
 }
 
 /**
- * From a queue call's legs, find the agent (User) who answered.
+ * From a queue call's legs, find the agent who answered.
+ * Pass queueExtensionId to skip the queue's own leg (which also shows as "Accepted").
  * Returns null if no agent leg found (missed/voicemail).
  */
 export function extractAgentFromLegs(
-  legs: RCCallLeg[]
-): { id: string; name: string } | null {
-  // Find the leg where a User-type extension handled the call
+  legs: RCCallLeg[],
+  queueExtensionId?: string | number
+): { id: string } | null {
+  const skipId = queueExtensionId != null ? String(queueExtensionId) : null;
+  // Find the Inbound+Accepted leg that isn't the queue itself
   for (const leg of legs) {
     if (
+      leg.result === "Accepted" &&
+      leg.direction === "Inbound" &&
       leg.extension &&
-      leg.extension.type === "User" &&
-      leg.result === "Accepted"
+      (!skipId || String(leg.extension.id) !== skipId)
     ) {
-      return { id: leg.extension.id, name: leg.extension.name };
-    }
-  }
-  // Fallback: any user extension in legs
-  for (const leg of legs) {
-    if (leg.extension && leg.extension.type === "User") {
-      return { id: leg.extension.id, name: leg.extension.name };
+      return { id: String(leg.extension.id) };
     }
   }
   return null;
