@@ -8,11 +8,55 @@ import {
 } from "recharts";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionSkeleton } from "@/components/ui/Loader";
-import type { InboundKpis, LOInboundStats, CallDetail } from "@/types/kpi";
+import type { LOInboundStats, CallDetail } from "@/types/kpi";
 import type { DashboardKpis } from "@/app/api/ringcentral/dashboard/route";
 
 const GOLD = "#C48B1F";
 const SURFACE_2 = "#1A1A1A";
+const TZ = "America/Los_Angeles";
+
+// ─── Date Range Helpers ───────────────────────────────────────────────────────
+
+function pacificMidnightISO(dateStr: string): string {
+  const noonUTC = new Date(`${dateStr}T12:00:00Z`);
+  const noonHour = parseInt(
+    new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", hour12: false, hourCycle: "h23" }).format(noonUTC)
+  );
+  const offsetHours = noonHour - 12;
+  return `${dateStr}T${String(-offsetHours).padStart(2, "0")}:00:00.000Z`;
+}
+
+type Preset = "today" | "yesterday" | "7days" | "month";
+
+interface DateRange { from: string; to: string; label: string }
+
+function getRange(preset: Preset): DateRange {
+  const now = new Date();
+  const todayStr = now.toLocaleDateString("en-CA", { timeZone: TZ });
+
+  switch (preset) {
+    case "today":
+      return { from: pacificMidnightISO(todayStr), to: now.toISOString(), label: "Today" };
+    case "yesterday": {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 1);
+      const yStr = d.toLocaleDateString("en-CA", { timeZone: TZ });
+      return { from: pacificMidnightISO(yStr), to: pacificMidnightISO(todayStr), label: "Yesterday" };
+    }
+    case "7days": {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 6);
+      const wStr = d.toLocaleDateString("en-CA", { timeZone: TZ });
+      return { from: pacificMidnightISO(wStr), to: now.toISOString(), label: "Last 7 Days" };
+    }
+    case "month": {
+      const monthStart = `${todayStr.slice(0, 8)}01`;
+      return { from: pacificMidnightISO(monthStart), to: now.toISOString(), label: "This Month" };
+    }
+  }
+}
+
+// ─── Formatters ───────────────────────────────────────────────────────────────
 
 function fmt(sec: number) {
   if (!sec) return "—";
@@ -26,13 +70,18 @@ function fmtTime(iso: string) {
 
 function fmtPhone(raw: string) {
   const d = raw.replace(/\D/g, "");
-  if (d.length === 11 && d[0] === "1") return `(${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`;
-  if (d.length === 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+  if (d.length === 11 && d[0] === "1") return `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
   return raw;
 }
 
-async function fetchDashboard(): Promise<DashboardKpis> {
-  const res = await fetch("/api/ringcentral/dashboard");
+// ─── Fetch ────────────────────────────────────────────────────────────────────
+
+async function fetchDashboard(range: DateRange): Promise<DashboardKpis> {
+  const url = new URL("/api/ringcentral/dashboard", window.location.origin);
+  url.searchParams.set("from", range.from);
+  url.searchParams.set("to", range.to);
+  const res = await fetch(url.toString());
   if (!res.ok) {
     const e = await res.json().catch(() => ({ error: "Unknown error" }));
     throw new Error(e.error ?? "Failed to fetch call data");
@@ -58,10 +107,7 @@ function LORow({ lo, isLast }: { lo: LOInboundStats; isLast: boolean }) {
           <div className="flex items-center gap-2">
             <span
               className="text-xs transition-transform inline-block"
-              style={{
-                color: "var(--color-muted)",
-                transform: open ? "rotate(90deg)" : "rotate(0deg)",
-              }}
+              style={{ color: "var(--color-muted)", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}
             >
               ▶
             </span>
@@ -85,7 +131,6 @@ function LORow({ lo, isLast }: { lo: LOInboundStats; isLast: boolean }) {
         </td>
       </tr>
 
-      {/* Drill-down: individual calls */}
       {open && (
         <tr>
           <td colSpan={4} className="p-0">
@@ -116,11 +161,7 @@ function LORow({ lo, isLast }: { lo: LOInboundStats; isLast: boolean }) {
                         <td className="py-2 px-3">
                           <span
                             className="px-2 py-0.5 rounded text-xs"
-                            style={{
-                              background: "#1a1a1a",
-                              color: GOLD,
-                              border: "1px solid #2a2a2a",
-                            }}
+                            style={{ background: "#1a1a1a", color: GOLD, border: "1px solid #2a2a2a" }}
                           >
                             {c.queue || "—"}
                           </span>
@@ -141,31 +182,75 @@ function LORow({ lo, isLast }: { lo: LOInboundStats; isLast: boolean }) {
   );
 }
 
+// ─── Date Range Selector ──────────────────────────────────────────────────────
+
+const PRESETS: { key: Preset; label: string }[] = [
+  { key: "today", label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "7days", label: "7 Days" },
+  { key: "month", label: "Month" },
+];
+
+function DateRangeSelector({
+  active,
+  onChange,
+}: {
+  active: Preset;
+  onChange: (p: Preset) => void;
+}) {
+  return (
+    <div className="flex gap-1">
+      {PRESETS.map((p) => (
+        <button
+          key={p.key}
+          onClick={() => onChange(p.key)}
+          className="px-3 py-1 rounded text-xs font-medium transition-all"
+          style={{
+            background: active === p.key ? GOLD : "var(--color-surface)",
+            color: active === p.key ? "#0A0A0A" : "var(--color-muted)",
+            border: `1px solid ${active === p.key ? GOLD : "var(--color-border)"}`,
+          }}
+        >
+          {p.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function InboundMetrics() {
   const queryClient = useQueryClient();
+  const [preset, setPreset] = useState<Preset>("today");
+  const range = getRange(preset);
+
   const { data: dashboard, isLoading, isError, error } = useQuery<DashboardKpis>({
-    queryKey: ["rc-dashboard"],
-    queryFn: fetchDashboard,
+    queryKey: ["rc-dashboard", preset],
+    queryFn: () => fetchDashboard(range),
     staleTime: 60 * 60 * 1000,
     refetchInterval: 60 * 60 * 1000,
   });
   const data = dashboard?.inbound ?? null;
 
+  function handlePresetChange(p: Preset) {
+    setPreset(p);
+    queryClient.invalidateQueries({ queryKey: ["rc-dashboard", p] });
+  }
+
   return (
     <section>
       {/* Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+        <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-base font-semibold uppercase tracking-widest" style={{ color: GOLD }}>
             Inbound Calls
           </h2>
           <span
-            className="text-xs px-2 py-0.5 rounded-full uppercase tracking-wider"
+            className="text-xs px-2 py-0.5 rounded-full uppercase tracking-wider hidden sm:inline"
             style={{ background: SURFACE_2, color: "var(--color-muted)", border: "1px solid var(--color-border)" }}
           >
-            Get That Bag · Fresh Leads - Get Some
+            Get That Bag · Fresh Leads
           </span>
           {data && (
             <span className="text-xs hidden sm:block" style={{ color: "var(--color-muted)" }}>
@@ -173,15 +258,18 @@ export function InboundMetrics() {
             </span>
           )}
         </div>
-        <button
-          onClick={() => queryClient.invalidateQueries({ queryKey: ["rc-dashboard"] })}
-          className="w-8 h-8 flex items-center justify-center rounded-lg transition-all text-sm"
-          style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", color: "var(--color-muted)" }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = GOLD; e.currentTarget.style.color = GOLD; }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--color-border)"; e.currentTarget.style.color = "var(--color-muted)"; }}
-        >
-          ↺
-        </button>
+        <div className="flex items-center gap-2">
+          <DateRangeSelector active={preset} onChange={handlePresetChange} />
+          <button
+            onClick={() => queryClient.invalidateQueries({ queryKey: ["rc-dashboard", preset] })}
+            className="w-8 h-8 flex items-center justify-center rounded-lg transition-all text-sm"
+            style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", color: "var(--color-muted)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.borderColor = GOLD; e.currentTarget.style.color = GOLD; }}
+            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--color-border)"; e.currentTarget.style.color = "var(--color-muted)"; }}
+          >
+            ↺
+          </button>
+        </div>
       </div>
 
       {/* Error */}
@@ -206,10 +294,10 @@ export function InboundMetrics() {
       {/* Charts + LO Table */}
       {data && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Hourly chart */}
+          {/* Volume chart */}
           <div className="rounded-xl p-5" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
             <h3 className="text-xs font-medium uppercase tracking-widest mb-4" style={{ color: "var(--color-muted)" }}>
-              Inbound Volume — Today
+              {preset === "today" || preset === "yesterday" ? "Inbound Volume — Hourly" : "Inbound Volume — Daily"}
             </h3>
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={data.hourlyVolume} barSize={12}>
@@ -238,7 +326,7 @@ export function InboundMetrics() {
               </h3>
             </div>
             {data.byLO.length === 0 ? (
-              <p className="text-sm p-4" style={{ color: "var(--color-muted)" }}>No inbound calls yet today.</p>
+              <p className="text-sm p-4" style={{ color: "var(--color-muted)" }}>No inbound calls for this period.</p>
             ) : (
               <table className="w-full">
                 <thead>

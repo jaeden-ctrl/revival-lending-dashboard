@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import {
   getAccessToken,
   getTargetQueues,
@@ -12,43 +12,110 @@ export interface DashboardKpis {
   inbound: InboundKpis;
 }
 
-interface Cache { data: DashboardKpis; cachedAt: number }
-let cache: Cache | null = null;
+// Cache keyed by "fromISO|toHour" so different date ranges cache independently
+const cacheMap = new Map<string, { data: DashboardKpis; cachedAt: number }>();
 const CACHE_TTL = 55 * 60 * 1000;
+
+const TZ = "America/Los_Angeles";
+
+/** Returns midnight Pacific time for a given YYYY-MM-DD date string. DST-safe. */
+function pacificMidnight(dateStr: string): Date {
+  const noonUTC = new Date(`${dateStr}T12:00:00Z`);
+  const noonHour = parseInt(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: TZ,
+      hour: "numeric",
+      hour12: false,
+      hourCycle: "h23",
+    }).format(noonUTC)
+  );
+  const offsetHours = noonHour - 12; // -7 PDT or -8 PST
+  return new Date(`${dateStr}T${String(-offsetHours).padStart(2, "0")}:00:00.000Z`);
+}
+
+/** Returns start-of-today in Pacific time. */
+function pacificTodayStart(): Date {
+  const now = new Date();
+  const todayStr = now.toLocaleDateString("en-CA", { timeZone: TZ }); // YYYY-MM-DD
+  return pacificMidnight(todayStr);
+}
 
 function isMissed(result: string) {
   return ["Missed", "Voicemail", "HangUp", "Declined"].includes(result);
 }
 
-function buildHourly(records: { startTime: string }[]): HourlyVolume[] {
-  const counts: Record<number, number> = {};
-  for (const r of records) {
-    const h = new Date(r.startTime).getHours();
-    counts[h] = (counts[h] ?? 0) + 1;
+function buildVolume(
+  records: { startTime: string }[],
+  dateFrom: Date,
+  dateTo: Date
+): HourlyVolume[] {
+  const daysDiff = (dateTo.getTime() - dateFrom.getTime()) / (1000 * 60 * 60 * 24);
+
+  if (daysDiff <= 1.5) {
+    // Single day: hourly breakdown 7am–9pm Pacific
+    const counts: Record<number, number> = {};
+    for (const r of records) {
+      const h = parseInt(
+        new Intl.DateTimeFormat("en-US", {
+          timeZone: TZ,
+          hour: "numeric",
+          hour12: false,
+          hourCycle: "h23",
+        }).format(new Date(r.startTime))
+      );
+      counts[h] = (counts[h] ?? 0) + 1;
+    }
+    return Array.from({ length: 15 }, (_, i) => i + 7).map((h) => ({
+      hour: h === 12 ? "12 PM" : h < 12 ? `${h} AM` : `${h - 12} PM`,
+      calls: counts[h] ?? 0,
+    }));
+  } else {
+    // Multi-day: daily breakdown
+    const counts: Record<string, number> = {};
+    for (const r of records) {
+      const d = new Date(r.startTime).toLocaleDateString("en-CA", { timeZone: TZ });
+      counts[d] = (counts[d] ?? 0) + 1;
+    }
+    const result: HourlyVolume[] = [];
+    const cursor = new Date(dateFrom);
+    while (cursor < dateTo) {
+      const dateStr = cursor.toLocaleDateString("en-CA", { timeZone: TZ });
+      const label = cursor.toLocaleDateString("en-US", {
+        timeZone: TZ,
+        month: "short",
+        day: "numeric",
+      });
+      result.push({ hour: label, calls: counts[dateStr] ?? 0 });
+      cursor.setUTCDate(cursor.getUTCDate() + 1);
+    }
+    return result;
   }
-  return Array.from({ length: 15 }, (_, i) => i + 7).map((h) => ({
-    hour: h === 12 ? "12 PM" : h < 12 ? `${h} AM` : `${h - 12} PM`,
-    calls: counts[h] ?? 0,
-  }));
 }
 
-export async function GET() {
-  if (cache && Date.now() - cache.cachedAt < CACHE_TTL) {
-    return NextResponse.json(cache.data);
+export async function GET(request: NextRequest) {
+  const { searchParams } = request.nextUrl;
+  const fromParam = searchParams.get("from");
+  const toParam = searchParams.get("to");
+
+  const now = new Date();
+  const dateFrom = fromParam ? new Date(fromParam) : pacificTodayStart();
+  const dateTo = toParam ? new Date(toParam) : now;
+
+  // Cache key: from ISO + to truncated to the hour (so current-day cache busts hourly)
+  const cacheKey = `${dateFrom.toISOString()}|${dateTo.toISOString().slice(0, 13)}`;
+  const cached = cacheMap.get(cacheKey);
+  if (cached && Date.now() - cached.cachedAt < CACHE_TTL) {
+    return NextResponse.json(cached.data);
   }
 
   try {
     await getAccessToken();
 
-    const now = new Date();
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-
     const queues = await getTargetQueues();
 
     const queueCallSets = await Promise.all(
       queues.map(async (q) => {
-        const calls = await getQueueInboundCalls(q.id, todayStart, now);
+        const calls = await getQueueInboundCalls(q.id, dateFrom, dateTo);
         return calls.map((c) => ({ ...c, queueName: q.name }));
       })
     );
@@ -58,7 +125,10 @@ export async function GET() {
     const missedIn = allInbound.filter((c) => isMissed(c.result));
     const totalInTalk = answeredIn.reduce((s, c) => s + (c.duration ?? 0), 0);
 
-    const loMap = new Map<string, { name: string; extensionId: string; answered: RCDetailedCallRecord[]; missed: number }>();
+    const loMap = new Map<
+      string,
+      { name: string; extensionId: string; answered: RCDetailedCallRecord[]; missed: number }
+    >();
     for (const call of allInbound) {
       const agent = extractAgentFromLegs(call.legs ?? []);
       if (agent) {
@@ -75,18 +145,21 @@ export async function GET() {
       .map(({ name, extensionId, answered, missed }) => {
         const talk = answered.reduce((s, c) => s + (c.duration ?? 0), 0);
         return {
-          name, extensionId,
+          name,
+          extensionId,
           answered: answered.length,
           missed,
           avgTalkTimeSec: answered.length > 0 ? Math.round(talk / answered.length) : 0,
-          calls: answered.map((c): CallDetail => ({
-            id: c.id,
-            startTime: c.startTime,
-            durationSec: c.duration ?? 0,
-            result: "Answered",
-            queue: (c as typeof c & { queueName: string }).queueName ?? "",
-            from: c.from?.phoneNumber ?? c.from?.name ?? "Unknown",
-          })),
+          calls: answered.map(
+            (c): CallDetail => ({
+              id: c.id,
+              startTime: c.startTime,
+              durationSec: c.duration ?? 0,
+              result: "Answered",
+              queue: (c as typeof c & { queueName: string }).queueName ?? "",
+              from: c.from?.phoneNumber ?? c.from?.name ?? "Unknown",
+            })
+          ),
         };
       })
       .sort((a, b) => b.answered - a.answered);
@@ -96,15 +169,16 @@ export async function GET() {
         answered: answeredIn.length,
         missed: missedIn.length,
         total: allInbound.length,
-        avgTalkTimeSec: answeredIn.length > 0 ? Math.round(totalInTalk / answeredIn.length) : 0,
+        avgTalkTimeSec:
+          answeredIn.length > 0 ? Math.round(totalInTalk / answeredIn.length) : 0,
       },
       byLO,
-      hourlyVolume: buildHourly(allInbound),
+      hourlyVolume: buildVolume(allInbound, dateFrom, dateTo),
       lastUpdated: now.toISOString(),
     };
 
     const result: DashboardKpis = { inbound };
-    cache = { data: result, cachedAt: Date.now() };
+    cacheMap.set(cacheKey, { data: result, cachedAt: Date.now() });
     return NextResponse.json(result);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
