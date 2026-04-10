@@ -7,8 +7,7 @@ import {
 import { SectionSkeleton } from "@/components/ui/Loader";
 import type { DashboardKpis } from "@/app/api/ringcentral/dashboard/route";
 import type { LOInboundStats } from "@/types/kpi";
-import type { Preset } from "@/lib/dateRange";
-import { getRange } from "@/lib/dateRange";
+import type { DateRange } from "@/lib/dateRange";
 
 const GOLD = "#C48B1F";
 const GOLD_DIM = "#7A5811";
@@ -33,8 +32,7 @@ function firstLast(fullName: string): string {
   return `${parts[0]} ${parts[parts.length - 1][0]}.`;
 }
 
-async function fetchDashboard(preset: Preset): Promise<DashboardKpis> {
-  const range = getRange(preset);
+async function fetchDashboard(range: DateRange): Promise<DashboardKpis> {
   const url = new URL("/api/ringcentral/dashboard", window.location.origin);
   url.searchParams.set("from", range.from);
   url.searchParams.set("to", range.to);
@@ -102,10 +100,10 @@ function LOCard({ lo }: { lo: LOInboundStats }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function LOMetrics({ preset }: { preset: Preset }) {
+export function LOMetrics({ queryKey, range }: { queryKey: string; range: DateRange }) {
   const { data: dashboard, isLoading, isError, error } = useQuery<DashboardKpis>({
-    queryKey: ["rc-dashboard", preset],
-    queryFn: () => fetchDashboard(preset),
+    queryKey: ["rc-dashboard", queryKey],
+    queryFn: () => fetchDashboard(range),
     staleTime: 60 * 60 * 1000,
     refetchInterval: 60 * 60 * 1000,
   });

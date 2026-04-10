@@ -1,0 +1,3 @@
+{
+  "/api/ringcentral/inbound/route": "app/api/ringcentral/inbound/route.js"
+}

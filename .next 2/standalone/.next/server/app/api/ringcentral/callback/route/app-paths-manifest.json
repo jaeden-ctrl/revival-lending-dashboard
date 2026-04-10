@@ -1,0 +1,3 @@
+{
+  "/api/ringcentral/callback/route": "app/api/ringcentral/callback/route.js"
+}

@@ -1,4 +1,4 @@
-export type Preset = "today" | "yesterday" | "week" | "7days" | "month";
+export type Preset = "today" | "yesterday" | "week" | "7days" | "month" | "custom";
 
 const TZ = "America/Los_Angeles";
 
@@ -53,7 +53,18 @@ export function getRange(preset: Preset): DateRange {
       const monthStart = `${todayStr.slice(0, 8)}01`;
       return { from: pacificMidnightISO(monthStart), to: now.toISOString(), label: "This Month" };
     }
+    default:
+      return { from: pacificMidnightISO(todayStr), to: now.toISOString(), label: "Today" };
   }
+}
+
+/** Build a DateRange from two YYYY-MM-DD strings (Pacific midnight → end of day). */
+export function getCustomRange(fromDate: string, toDate: string): DateRange {
+  const from = pacificMidnightISO(fromDate);
+  // End of day Pacific: midnight of the next day minus 1ms
+  const nextDay = new Date(new Date(pacificMidnightISO(toDate)).getTime() + 24 * 60 * 60 * 1000 - 1);
+  const to = nextDay > new Date() ? new Date().toISOString() : nextDay.toISOString();
+  return { from, to, label: `${fromDate} – ${toDate}` };
 }
 
 export const PRESETS: { key: Preset; label: string }[] = [

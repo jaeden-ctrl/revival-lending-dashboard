@@ -10,8 +10,7 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionSkeleton } from "@/components/ui/Loader";
 import type { LOInboundStats, CallDetail } from "@/types/kpi";
 import type { DashboardKpis } from "@/app/api/ringcentral/dashboard/route";
-import type { Preset } from "@/lib/dateRange";
-import { getRange } from "@/lib/dateRange";
+import type { Preset, DateRange } from "@/lib/dateRange";
 
 const GOLD = "#C48B1F";
 const SURFACE_2 = "#1A1A1A";
@@ -33,8 +32,7 @@ function fmtPhone(raw: string) {
   return raw;
 }
 
-async function fetchDashboard(preset: Preset): Promise<DashboardKpis> {
-  const range = getRange(preset);
+async function fetchDashboard(range: DateRange): Promise<DashboardKpis> {
   const url = new URL("/api/ringcentral/dashboard", window.location.origin);
   url.searchParams.set("from", range.from);
   url.searchParams.set("to", range.to);
@@ -141,10 +139,10 @@ function LORow({ lo, isLast }: { lo: LOInboundStats; isLast: boolean }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function InboundMetrics({ preset }: { preset: Preset }) {
+export function InboundMetrics({ queryKey, range, preset }: { queryKey: string; range: DateRange; preset: Preset }) {
   const { data: dashboard, isLoading, isError, error } = useQuery<DashboardKpis>({
-    queryKey: ["rc-dashboard", preset],
-    queryFn: () => fetchDashboard(preset),
+    queryKey: ["rc-dashboard", queryKey],
+    queryFn: () => fetchDashboard(range),
     staleTime: 60 * 60 * 1000,
     refetchInterval: 60 * 60 * 1000,
   });

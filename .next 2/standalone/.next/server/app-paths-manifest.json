@@ -1,0 +1,17 @@
+{
+  "/_global-error/page": "app/_global-error/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/auth/login/route": "app/api/auth/login/route.js",
+  "/api/auth/logout/route": "app/api/auth/logout/route.js",
+  "/api/debug/route": "app/api/debug/route.js",
+  "/api/ringcentral/auth/route": "app/api/ringcentral/auth/route.js",
+  "/api/ringcentral/callback/route": "app/api/ringcentral/callback/route.js",
+  "/api/ringcentral/calls/route": "app/api/ringcentral/calls/route.js",
+  "/api/ringcentral/dashboard/route": "app/api/ringcentral/dashboard/route.js",
+  "/api/ringcentral/inbound/route": "app/api/ringcentral/inbound/route.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/login/page": "app/login/page.js",
+  "/page": "app/page.js",
+  "/setup/page": "app/setup/page.js"
+}
