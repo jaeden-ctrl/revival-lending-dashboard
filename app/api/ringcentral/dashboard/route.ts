@@ -106,7 +106,14 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    const allInbound = queueCallSets.flat();
+    // Deduplicate by call ID — a call can appear in both queue logs if transferred
+    const seenIds = new Set<string>();
+    const allInbound = queueCallSets.flat().filter((c) => {
+      if (seenIds.has(c.id)) return false;
+      seenIds.add(c.id);
+      return true;
+    });
+
     const answeredIn = allInbound.filter((c) => !isMissed(c.result));
     const missedIn = allInbound.filter((c) => isMissed(c.result));
     const totalInTalk = answeredIn.reduce((s, c) => s + (c.duration ?? 0), 0);
