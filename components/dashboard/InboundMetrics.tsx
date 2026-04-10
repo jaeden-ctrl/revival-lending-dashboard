@@ -26,7 +26,7 @@ function pacificMidnightISO(dateStr: string): string {
   return `${dateStr}T${String(-offsetHours).padStart(2, "0")}:00:00.000Z`;
 }
 
-type Preset = "today" | "yesterday" | "7days" | "month";
+type Preset = "today" | "yesterday" | "week" | "7days" | "month";
 
 interface DateRange { from: string; to: string; label: string }
 
@@ -42,6 +42,17 @@ function getRange(preset: Preset): DateRange {
       d.setDate(d.getDate() - 1);
       const yStr = d.toLocaleDateString("en-CA", { timeZone: TZ });
       return { from: pacificMidnightISO(yStr), to: pacificMidnightISO(todayStr), label: "Yesterday" };
+    }
+    case "week": {
+      // Find Monday of current week in Pacific time
+      const weekdayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+      const weekdayStr = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short" }).format(now);
+      const dow = weekdayNames.indexOf(weekdayStr); // 0=Sun, 1=Mon, ...
+      const daysBack = dow === 0 ? 6 : dow - 1; // days since Monday
+      const monday = new Date(now);
+      monday.setDate(monday.getDate() - daysBack);
+      const wStr = monday.toLocaleDateString("en-CA", { timeZone: TZ });
+      return { from: pacificMidnightISO(wStr), to: now.toISOString(), label: "This Week" };
     }
     case "7days": {
       const d = new Date(now);
@@ -187,6 +198,7 @@ function LORow({ lo, isLast }: { lo: LOInboundStats; isLast: boolean }) {
 const PRESETS: { key: Preset; label: string }[] = [
   { key: "today", label: "Today" },
   { key: "yesterday", label: "Yesterday" },
+  { key: "week", label: "This Week" },
   { key: "7days", label: "7 Days" },
   { key: "month", label: "Month" },
 ];
