@@ -1,19 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-async function saveTokenToNetlify(token: string): Promise<void> {
-  const netlifyToken = process.env.NETLIFY_TOKEN;
-  const siteId = process.env.NETLIFY_SITE_ID;
-  if (!netlifyToken || !siteId) return;
-
-  await fetch(`https://api.netlify.com/api/v1/sites/${siteId}/env/RC_REFRESH_TOKEN`, {
-    method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${netlifyToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ values: [{ context: "all", value: token }] }),
-  });
-}
+import { saveInitialTokens } from "@/lib/ringcentral";
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
@@ -65,10 +51,10 @@ export async function GET(request: NextRequest) {
 
   const refreshToken = data.refresh_token;
 
-  // Auto-save to Netlify env — no manual copy/paste needed
+  // Save both tokens to Netlify Blobs — shared across all function instances
   let saved = false;
   try {
-    await saveTokenToNetlify(refreshToken);
+    await saveInitialTokens(data.access_token, data.expires_in, refreshToken);
     saved = true;
   } catch {
     saved = false;

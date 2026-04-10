@@ -33,37 +33,50 @@ function getBlobStore() {
   });
 }
 
-async function getSharedToken(): Promise<TokenCache | null> {
+interface BlobState {
+  accessToken: string;
+  accessExpiresAt: number;
+  refreshToken: string; // stored in Blobs, updated on every rotation
+}
+
+async function readBlobs(): Promise<BlobState | null> {
   try {
-    const store = getBlobStore();
-    const raw = await store.get("access_token", { type: "text" });
+    const raw = await getBlobStore().get("state", { type: "text" });
     if (!raw) return null;
-    return JSON.parse(raw) as TokenCache;
+    return JSON.parse(raw) as BlobState;
   } catch {
     return null;
   }
 }
 
-async function saveSharedToken(cache: TokenCache): Promise<void> {
+async function writeBlobs(state: BlobState): Promise<void> {
   try {
-    const store = getBlobStore();
-    await store.set("access_token", JSON.stringify(cache));
+    await getBlobStore().set("state", JSON.stringify(state));
   } catch {
-    // Non-fatal — fall back to direct refresh next time
+    console.warn("[RC] Failed to write Blobs state");
   }
 }
 
+/** Called from the OAuth callback to persist the initial tokens. */
+export async function saveInitialTokens(accessToken: string, accessExpiresIn: number, refreshToken: string): Promise<void> {
+  await writeBlobs({
+    accessToken,
+    accessExpiresAt: Date.now() + accessExpiresIn * 1000,
+    refreshToken,
+  });
+}
+
 export async function getAccessToken(): Promise<string> {
-  // 1. In-memory cache (same instance)
+  // 1. In-memory cache (same warm instance)
   if (memCache && Date.now() < memCache.expiresAt - 60_000) {
     return memCache.accessToken;
   }
 
-  // 2. Shared Blobs cache (across all instances)
-  const shared = await getSharedToken();
-  if (shared && Date.now() < shared.expiresAt - 60_000) {
-    memCache = shared;
-    return shared.accessToken;
+  // 2. Shared Blobs cache (across all instances) — also holds the refresh token
+  const state = await readBlobs();
+  if (state && Date.now() < state.accessExpiresAt - 60_000) {
+    memCache = { accessToken: state.accessToken, expiresAt: state.accessExpiresAt };
+    return state.accessToken;
   }
 
   // 3. Need to refresh — coalesce within this instance
@@ -72,15 +85,16 @@ export async function getAccessToken(): Promise<string> {
   refreshInFlight = (async () => {
     const clientId = process.env.RC_CLIENT_ID;
     const clientSecret = process.env.RC_CLIENT_SECRET;
-    const refreshToken = process.env.RC_REFRESH_TOKEN;
+
+    // Refresh token comes from Blobs first (most current), fall back to env var
+    const refreshToken = state?.refreshToken ?? process.env.RC_REFRESH_TOKEN;
 
     if (!clientId || !clientSecret || !refreshToken) {
-      throw new Error("RingCentral credentials not configured");
+      throw new Error("RingCentral credentials not configured — visit /setup to reauthorize");
     }
 
     const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
-    // Retry on 429 with backoff
     for (let attempt = 0; attempt < 4; attempt++) {
       if (attempt > 0) {
         await new Promise((r) => setTimeout(r, 1000 * Math.pow(2, attempt - 1)));
@@ -103,26 +117,20 @@ export async function getAccessToken(): Promise<string> {
       }
 
       const data = await res.json();
-      const newCache: TokenCache = {
+      const newState: BlobState = {
         accessToken: data.access_token,
-        expiresAt: Date.now() + data.expires_in * 1000,
+        accessExpiresAt: Date.now() + data.expires_in * 1000,
+        refreshToken: data.refresh_token ?? refreshToken,
       };
 
-      // Save to both memory and shared Blobs
-      memCache = newCache;
-      await saveSharedToken(newCache);
+      // Save to Blobs (shared) and memory (local)
+      await writeBlobs(newState);
+      memCache = { accessToken: newState.accessToken, expiresAt: newState.accessExpiresAt };
 
-      // Persist new refresh token to Netlify env so it never expires
-      if (data.refresh_token && data.refresh_token !== refreshToken) {
-        persistRefreshToken(data.refresh_token).catch(() =>
-          console.warn("[RC] Failed to persist new refresh token")
-        );
-      }
-
-      return newCache.accessToken;
+      return newState.accessToken;
     }
 
-    throw new Error("RingCentral token refresh failed: rate limited after retries");
+    throw new Error("RingCentral token refresh failed after retries — visit /setup to reauthorize");
   })().finally(() => {
     refreshInFlight = null;
   });
@@ -133,25 +141,6 @@ export async function getAccessToken(): Promise<string> {
 async function fetchWithToken(url: string): Promise<Response> {
   const token = await getAccessToken();
   return fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-}
-
-/**
- * Persists a new refresh token to Netlify env vars so the token auto-rotates
- * and never expires as long as the dashboard is used within the token window.
- */
-async function persistRefreshToken(newToken: string): Promise<void> {
-  const netlifyToken = process.env.NETLIFY_TOKEN;
-  const siteId = process.env.NETLIFY_SITE_ID;
-  if (!netlifyToken || !siteId) return;
-
-  await fetch(`https://api.netlify.com/api/v1/sites/${siteId}/env/RC_REFRESH_TOKEN`, {
-    method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${netlifyToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ values: [{ context: "all", value: newToken }] }),
-  });
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
