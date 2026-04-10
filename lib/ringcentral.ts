@@ -267,6 +267,28 @@ export async function getQueueInboundCalls(
 }
 
 /**
+ * Fetch inbound call log for a specific user extension.
+ */
+export async function getUserInboundCalls(
+  extensionId: string,
+  dateFrom: Date,
+  dateTo: Date
+): Promise<RCDetailedCallRecord[]> {
+  const params = new URLSearchParams({
+    dateFrom: dateFrom.toISOString(),
+    dateTo: dateTo.toISOString(),
+    direction: "Inbound",
+    view: "Simple",
+    perPage: "250",
+    withRecording: "false",
+  });
+  return fetchAllPages<RCDetailedCallRecord>(
+    `${RC_BASE}/restapi/v1.0/account/~/extension/${extensionId}/call-log`,
+    params
+  );
+}
+
+/**
  * Fetch outbound call log for a specific user extension.
  */
 export async function getExtensionOutboundCalls(
