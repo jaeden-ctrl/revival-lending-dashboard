@@ -5,7 +5,8 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import { SectionSkeleton } from "@/components/ui/Loader";
-import type { DashboardKpis, LOStats } from "@/app/api/ringcentral/dashboard/route";
+import type { DashboardKpis } from "@/app/api/ringcentral/dashboard/route";
+import type { LOInboundStats } from "@/types/kpi";
 import type { Preset } from "@/lib/dateRange";
 import { getRange } from "@/lib/dateRange";
 
@@ -47,7 +48,7 @@ async function fetchDashboard(preset: Preset): Promise<DashboardKpis> {
 
 // ─── LO Card ─────────────────────────────────────────────────────────────────
 
-function LOCard({ lo }: { lo: LOStats }) {
+function LOCard({ lo }: { lo: LOInboundStats }) {
   const rate = lo.answered + lo.missed > 0
     ? Math.round((lo.answered / (lo.answered + lo.missed)) * 100)
     : null;
@@ -109,7 +110,7 @@ export function LOMetrics({ preset }: { preset: Preset }) {
     refetchInterval: 60 * 60 * 1000,
   });
 
-  const byLO = dashboard?.loStats ?? [];
+  const byLO = dashboard?.inbound.byLO ?? [];
 
   // Chart data: abbreviated names for chart axis
   const chartData = byLO.map((lo) => ({

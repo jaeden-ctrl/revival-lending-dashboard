@@ -3,32 +3,17 @@ import {
   getAccessToken,
   getTargetQueues,
   getQueueInboundCalls,
-  getUserExtensions,
-  getUserInboundCalls,
   extractAgentFromLegs,
   type RCDetailedCallRecord,
-  type RCExtension,
 } from "@/lib/ringcentral";
 import type { InboundKpis, LOInboundStats, HourlyVolume, CallDetail } from "@/types/kpi";
 
-export interface LOStats {
-  name: string;
-  extensionId: string;
-  answered: number;
-  missed: number;
-  avgTalkTimeSec: number;
-  calls: CallDetail[];
-}
-
 export interface DashboardKpis {
   inbound: InboundKpis;
-  loStats: LOStats[];
 }
 
-// Cache keyed by "fromISO|toHour" so different date ranges cache independently
 const cacheMap = new Map<string, { data: DashboardKpis; cachedAt: number }>();
 const CACHE_TTL = 55 * 60 * 1000;
-
 const TZ = "America/Los_Angeles";
 
 function pacificMidnight(dateStr: string): Date {
@@ -104,25 +89,21 @@ export async function GET(request: NextRequest) {
   try {
     await getAccessToken();
 
-    // Fetch queue totals and user extensions in parallel
-    const [queues, userExtensions] = await Promise.all([
-      getTargetQueues(),
-      getUserExtensions(),
-    ]);
+    const queues = await getTargetQueues();
 
-    // Queue-level inbound (for company totals + hourly chart)
     const queueCallSets = await Promise.all(
       queues.map(async (q) => {
         const calls = await getQueueInboundCalls(q.id, dateFrom, dateTo);
         return calls.map((c) => ({ ...c, queueName: q.name }));
       })
     );
+
     const allInbound = queueCallSets.flat();
     const answeredIn = allInbound.filter((c) => !isMissed(c.result));
     const missedIn = allInbound.filter((c) => isMissed(c.result));
     const totalInTalk = answeredIn.reduce((s, c) => s + (c.duration ?? 0), 0);
 
-    // byLO from queue legs (kept for the drill-down table in InboundMetrics)
+    // Build per-LO stats from queue call legs
     const loMap = new Map<string, { name: string; extensionId: string; answered: RCDetailedCallRecord[]; missed: number }>();
     for (const call of allInbound) {
       const agent = extractAgentFromLegs(call.legs ?? []);
@@ -133,6 +114,7 @@ export async function GET(request: NextRequest) {
         else lo.missed++;
       }
     }
+
     const byLO: LOInboundStats[] = Array.from(loMap.values())
       .map(({ name, extensionId, answered, missed }) => {
         const talk = answered.reduce((s, c) => s + (c.duration ?? 0), 0);
@@ -153,38 +135,6 @@ export async function GET(request: NextRequest) {
       })
       .sort((a, b) => b.answered - a.answered);
 
-    // Per-user inbound call logs (direct, not filtered to queues)
-    const userCallSets = await Promise.all(
-      userExtensions.map(async (u: RCExtension) => {
-        const calls = await getUserInboundCalls(u.id, dateFrom, dateTo);
-        return { user: u, calls };
-      })
-    );
-
-    const loStats: LOStats[] = userCallSets
-      .map(({ user, calls }) => {
-        const answered = calls.filter((c) => !isMissed(c.result));
-        const missed = calls.filter((c) => isMissed(c.result));
-        const talk = answered.reduce((s, c) => s + (c.duration ?? 0), 0);
-        return {
-          name: user.name,
-          extensionId: user.id,
-          answered: answered.length,
-          missed: missed.length,
-          avgTalkTimeSec: answered.length > 0 ? Math.round(talk / answered.length) : 0,
-          calls: answered.map((c): CallDetail => ({
-            id: c.id,
-            startTime: c.startTime,
-            durationSec: c.duration ?? 0,
-            result: "Answered",
-            queue: "",
-            from: c.from?.phoneNumber ?? c.from?.name ?? "Unknown",
-          })),
-        };
-      })
-      .filter((lo) => lo.answered + lo.missed > 0)
-      .sort((a, b) => b.answered - a.answered);
-
     const inbound: InboundKpis = {
       period: {
         answered: answeredIn.length,
@@ -197,7 +147,7 @@ export async function GET(request: NextRequest) {
       lastUpdated: now.toISOString(),
     };
 
-    const result: DashboardKpis = { inbound, loStats };
+    const result: DashboardKpis = { inbound };
     cacheMap.set(cacheKey, { data: result, cachedAt: Date.now() });
     return NextResponse.json(result);
   } catch (err) {
