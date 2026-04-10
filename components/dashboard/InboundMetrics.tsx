@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Cell, CartesianGrid,
@@ -10,64 +10,11 @@ import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionSkeleton } from "@/components/ui/Loader";
 import type { LOInboundStats, CallDetail } from "@/types/kpi";
 import type { DashboardKpis } from "@/app/api/ringcentral/dashboard/route";
+import type { Preset } from "@/lib/dateRange";
+import { getRange } from "@/lib/dateRange";
 
 const GOLD = "#C48B1F";
 const SURFACE_2 = "#1A1A1A";
-const TZ = "America/Los_Angeles";
-
-// ─── Date Range Helpers ───────────────────────────────────────────────────────
-
-function pacificMidnightISO(dateStr: string): string {
-  const noonUTC = new Date(`${dateStr}T12:00:00Z`);
-  const noonHour = parseInt(
-    new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", hour12: false, hourCycle: "h23" }).format(noonUTC)
-  );
-  const offsetHours = noonHour - 12;
-  return `${dateStr}T${String(-offsetHours).padStart(2, "0")}:00:00.000Z`;
-}
-
-type Preset = "today" | "yesterday" | "week" | "7days" | "month";
-
-interface DateRange { from: string; to: string; label: string }
-
-function getRange(preset: Preset): DateRange {
-  const now = new Date();
-  const todayStr = now.toLocaleDateString("en-CA", { timeZone: TZ });
-
-  switch (preset) {
-    case "today":
-      return { from: pacificMidnightISO(todayStr), to: now.toISOString(), label: "Today" };
-    case "yesterday": {
-      const d = new Date(now);
-      d.setDate(d.getDate() - 1);
-      const yStr = d.toLocaleDateString("en-CA", { timeZone: TZ });
-      return { from: pacificMidnightISO(yStr), to: pacificMidnightISO(todayStr), label: "Yesterday" };
-    }
-    case "week": {
-      // Find Monday of current week in Pacific time
-      const weekdayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-      const weekdayStr = new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short" }).format(now);
-      const dow = weekdayNames.indexOf(weekdayStr); // 0=Sun, 1=Mon, ...
-      const daysBack = dow === 0 ? 6 : dow - 1; // days since Monday
-      const monday = new Date(now);
-      monday.setDate(monday.getDate() - daysBack);
-      const wStr = monday.toLocaleDateString("en-CA", { timeZone: TZ });
-      return { from: pacificMidnightISO(wStr), to: now.toISOString(), label: "This Week" };
-    }
-    case "7days": {
-      const d = new Date(now);
-      d.setDate(d.getDate() - 6);
-      const wStr = d.toLocaleDateString("en-CA", { timeZone: TZ });
-      return { from: pacificMidnightISO(wStr), to: now.toISOString(), label: "Last 7 Days" };
-    }
-    case "month": {
-      const monthStart = `${todayStr.slice(0, 8)}01`;
-      return { from: pacificMidnightISO(monthStart), to: now.toISOString(), label: "This Month" };
-    }
-  }
-}
-
-// ─── Formatters ───────────────────────────────────────────────────────────────
 
 function fmt(sec: number) {
   if (!sec) return "—";
@@ -86,9 +33,8 @@ function fmtPhone(raw: string) {
   return raw;
 }
 
-// ─── Fetch ────────────────────────────────────────────────────────────────────
-
-async function fetchDashboard(range: DateRange): Promise<DashboardKpis> {
+async function fetchDashboard(preset: Preset): Promise<DashboardKpis> {
+  const range = getRange(preset);
   const url = new URL("/api/ringcentral/dashboard", window.location.origin);
   url.searchParams.set("from", range.from);
   url.searchParams.set("to", range.to);
@@ -193,66 +139,19 @@ function LORow({ lo, isLast }: { lo: LOInboundStats; isLast: boolean }) {
   );
 }
 
-// ─── Date Range Selector ──────────────────────────────────────────────────────
-
-const PRESETS: { key: Preset; label: string }[] = [
-  { key: "today", label: "Today" },
-  { key: "yesterday", label: "Yesterday" },
-  { key: "week", label: "This Week" },
-  { key: "7days", label: "7 Days" },
-  { key: "month", label: "Month" },
-];
-
-function DateRangeSelector({
-  active,
-  onChange,
-}: {
-  active: Preset;
-  onChange: (p: Preset) => void;
-}) {
-  return (
-    <div className="flex gap-1">
-      {PRESETS.map((p) => (
-        <button
-          key={p.key}
-          onClick={() => onChange(p.key)}
-          className="px-3 py-1 rounded text-xs font-medium transition-all"
-          style={{
-            background: active === p.key ? GOLD : "var(--color-surface)",
-            color: active === p.key ? "#0A0A0A" : "var(--color-muted)",
-            border: `1px solid ${active === p.key ? GOLD : "var(--color-border)"}`,
-          }}
-        >
-          {p.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function InboundMetrics() {
-  const queryClient = useQueryClient();
-  const [preset, setPreset] = useState<Preset>("today");
-  const range = getRange(preset);
-
+export function InboundMetrics({ preset }: { preset: Preset }) {
   const { data: dashboard, isLoading, isError, error } = useQuery<DashboardKpis>({
     queryKey: ["rc-dashboard", preset],
-    queryFn: () => fetchDashboard(range),
+    queryFn: () => fetchDashboard(preset),
     staleTime: 60 * 60 * 1000,
     refetchInterval: 60 * 60 * 1000,
   });
   const data = dashboard?.inbound ?? null;
 
-  function handlePresetChange(p: Preset) {
-    setPreset(p);
-    queryClient.invalidateQueries({ queryKey: ["rc-dashboard", p] });
-  }
-
   return (
     <section>
-      {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
         <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-base font-semibold uppercase tracking-widest" style={{ color: GOLD }}>
@@ -270,28 +169,14 @@ export function InboundMetrics() {
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <DateRangeSelector active={preset} onChange={handlePresetChange} />
-          <button
-            onClick={() => queryClient.invalidateQueries({ queryKey: ["rc-dashboard", preset] })}
-            className="w-8 h-8 flex items-center justify-center rounded-lg transition-all text-sm"
-            style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", color: "var(--color-muted)" }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = GOLD; e.currentTarget.style.color = GOLD; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--color-border)"; e.currentTarget.style.color = "var(--color-muted)"; }}
-          >
-            ↺
-          </button>
-        </div>
       </div>
 
-      {/* Error */}
       {isError && (
         <div className="rounded-xl p-4 mb-4 text-sm" style={{ background: "#2a1010", border: "1px solid var(--color-danger)", color: "var(--color-danger)" }}>
           {(error as Error).message}
         </div>
       )}
 
-      {/* Company Totals */}
       {isLoading ? (
         <SectionSkeleton count={4} />
       ) : data ? (
@@ -303,7 +188,6 @@ export function InboundMetrics() {
         </div>
       ) : null}
 
-      {/* Charts + LO Table */}
       {data && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Volume chart */}
