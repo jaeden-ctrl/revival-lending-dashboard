@@ -214,7 +214,7 @@ export async function getTargetQueues(): Promise<RCExtension[]> {
   if (queueCache && Date.now() - queueCache.cachedAt < 60 * 60 * 1000) {
     return queueCache.queues;
   }
-  const queues = await findQueuesByName(["get that bag", "fresh leads"]);
+  const queues = await findQueuesByName(["get that bag - let's go!", "fresh leads - get some"]);
   queueCache = { queues, cachedAt: Date.now() };
   return queues;
 }

@@ -165,7 +165,7 @@ export function InboundMetrics() {
             className="text-xs px-2 py-0.5 rounded-full uppercase tracking-wider"
             style={{ background: SURFACE_2, color: "var(--color-muted)", border: "1px solid var(--color-border)" }}
           >
-            Get That Bag · Fresh Leads
+            Get That Bag · Fresh Leads - Get Some
           </span>
           {data && (
             <span className="text-xs hidden sm:block" style={{ color: "var(--color-muted)" }}>
