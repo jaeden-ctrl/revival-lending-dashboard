@@ -1,26 +1,15 @@
-/**
- * Single endpoint that returns all RingCentral KPIs in one request.
- * This ensures only one token refresh happens per page load, avoiding 429s
- * that occurred when inbound + outbound routes each refreshed independently.
- */
 import { NextResponse } from "next/server";
 import {
   getAccessToken,
   getTargetQueues,
   getQueueInboundCalls,
   extractAgentFromLegs,
-  getUserExtensions,
-  getExtensionOutboundCalls,
   type RCDetailedCallRecord,
 } from "@/lib/ringcentral";
-import type {
-  InboundKpis, LOInboundStats, OutboundKpis, LOOutboundStats,
-  HourlyVolume, CallDetail,
-} from "@/types/kpi";
+import type { InboundKpis, LOInboundStats, HourlyVolume, CallDetail } from "@/types/kpi";
 
 export interface DashboardKpis {
   inbound: InboundKpis;
-  outbound: OutboundKpis;
 }
 
 interface Cache { data: DashboardKpis; cachedAt: number }
@@ -49,55 +38,40 @@ export async function GET() {
   }
 
   try {
-    // Single token refresh for the entire request
     await getAccessToken();
 
     const now = new Date();
     const todayStart = new Date(now);
     todayStart.setHours(0, 0, 0, 0);
 
-    // Fetch queues and extensions in parallel (token already cached)
-    const [queues, extensions] = await Promise.all([
-      getTargetQueues(),
-      getUserExtensions(),
-    ]);
+    const queues = await getTargetQueues();
 
-    // Fetch all call data in parallel
-    const [queueCallSets, outboundCallSets] = await Promise.all([
-      Promise.all(
-        queues.map(async (q) => {
-          const calls = await getQueueInboundCalls(q.id, todayStart, now);
-          return calls.map((c) => ({ ...c, queueName: q.name }));
-        })
-      ),
-      Promise.all(
-        extensions.slice(0, 30).map(async (ext) => {
-          const calls = await getExtensionOutboundCalls(ext.id, todayStart, now);
-          return { ext, calls };
-        })
-      ),
-    ]);
+    const queueCallSets = await Promise.all(
+      queues.map(async (q) => {
+        const calls = await getQueueInboundCalls(q.id, todayStart, now);
+        return calls.map((c) => ({ ...c, queueName: q.name }));
+      })
+    );
 
-    // ── Build Inbound KPIs ────────────────────────────────────────────────────
     const allInbound = queueCallSets.flat();
     const answeredIn = allInbound.filter((c) => !isMissed(c.result));
     const missedIn = allInbound.filter((c) => isMissed(c.result));
     const totalInTalk = answeredIn.reduce((s, c) => s + (c.duration ?? 0), 0);
 
-    const loInMap = new Map<string, { name: string; extensionId: string; answered: RCDetailedCallRecord[]; missed: number }>();
+    const loMap = new Map<string, { name: string; extensionId: string; answered: RCDetailedCallRecord[]; missed: number }>();
     for (const call of allInbound) {
       const agent = extractAgentFromLegs(call.legs ?? []);
       if (agent) {
-        if (!loInMap.has(agent.id)) {
-          loInMap.set(agent.id, { name: agent.name, extensionId: agent.id, answered: [], missed: 0 });
+        if (!loMap.has(agent.id)) {
+          loMap.set(agent.id, { name: agent.name, extensionId: agent.id, answered: [], missed: 0 });
         }
-        const lo = loInMap.get(agent.id)!;
+        const lo = loMap.get(agent.id)!;
         if (!isMissed(call.result)) lo.answered.push(call);
         else lo.missed++;
       }
     }
 
-    const byLOInbound: LOInboundStats[] = Array.from(loInMap.values())
+    const byLO: LOInboundStats[] = Array.from(loMap.values())
       .map(({ name, extensionId, answered, missed }) => {
         const talk = answered.reduce((s, c) => s + (c.duration ?? 0), 0);
         return {
@@ -124,47 +98,12 @@ export async function GET() {
         total: allInbound.length,
         avgTalkTimeSec: answeredIn.length > 0 ? Math.round(totalInTalk / answeredIn.length) : 0,
       },
-      byLO: byLOInbound,
+      byLO,
       hourlyVolume: buildHourly(allInbound),
       lastUpdated: now.toISOString(),
     };
 
-    // ── Build Outbound KPIs ───────────────────────────────────────────────────
-    const allOutbound = outboundCallSets.flatMap((r) => r.calls);
-    const totalOutTalk = allOutbound.reduce((s, c) => s + (c.duration ?? 0), 0);
-
-    const byLOOutbound: LOOutboundStats[] = outboundCallSets
-      .filter((r) => r.calls.length > 0)
-      .map(({ ext, calls }) => {
-        const talk = calls.reduce((s, c) => s + (c.duration ?? 0), 0);
-        return {
-          name: ext.name,
-          extensionId: ext.id,
-          total: calls.length,
-          avgTalkTimeSec: calls.length > 0 ? Math.round(talk / calls.length) : 0,
-          calls: calls.map((c): CallDetail => ({
-            id: c.id,
-            startTime: c.startTime,
-            durationSec: c.duration ?? 0,
-            result: c.result,
-            queue: "",
-            from: c.to?.phoneNumber ?? c.to?.name ?? "Unknown",
-          })),
-        };
-      })
-      .sort((a, b) => b.total - a.total);
-
-    const outbound: OutboundKpis = {
-      period: {
-        total: allOutbound.length,
-        avgTalkTimeSec: allOutbound.length > 0 ? Math.round(totalOutTalk / allOutbound.length) : 0,
-      },
-      byLO: byLOOutbound,
-      hourlyVolume: buildHourly(allOutbound),
-      lastUpdated: now.toISOString(),
-    };
-
-    const result: DashboardKpis = { inbound, outbound };
+    const result: DashboardKpis = { inbound };
     cache = { data: result, cachedAt: Date.now() };
     return NextResponse.json(result);
   } catch (err) {

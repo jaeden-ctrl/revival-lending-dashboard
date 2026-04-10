@@ -1,6 +1,5 @@
 import { QueryProvider } from "@/components/dashboard/QueryProvider";
 import { InboundMetrics } from "@/components/dashboard/InboundMetrics";
-import { OutboundMetrics } from "@/components/dashboard/OutboundMetrics";
 import { LogoutButton } from "@/components/dashboard/LogoutButton";
 
 export default function DashboardPage() {
@@ -36,10 +35,6 @@ export default function DashboardPage() {
         {/* Main Content */}
         <main className="px-6 py-8 max-w-7xl mx-auto space-y-12">
           <InboundMetrics />
-
-          <div style={{ height: 1, background: "var(--color-border)" }} />
-
-          <OutboundMetrics />
 
           {/* Coming Soon */}
           <section className="grid grid-cols-1 sm:grid-cols-2 gap-5">
