@@ -106,11 +106,23 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    // Deduplicate by call ID — a call can appear in both queue logs if transferred
+    // Step 1: deduplicate by call ID (same call can appear in both queue logs)
     const seenIds = new Set<string>();
-    const allInbound = queueCallSets.flat().filter((c) => {
+    const deduped = queueCallSets.flat().filter((c) => {
       if (seenIds.has(c.id)) return false;
       seenIds.add(c.id);
+      return true;
+    });
+
+    // Step 2: deduplicate by caller phone number — keep only the first call per caller
+    // Sort ascending so the earliest call wins
+    deduped.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+    const seenCallers = new Set<string>();
+    const allInbound = deduped.filter((c) => {
+      const phone = c.from?.phoneNumber;
+      if (!phone) return true; // no number — can't deduplicate, always include
+      if (seenCallers.has(phone)) return false;
+      seenCallers.add(phone);
       return true;
     });
 
