@@ -176,6 +176,7 @@ export interface RCDetailedCallRecord {
   from: { phoneNumber?: string; name?: string; extensionId?: string };
   to: { phoneNumber?: string; name?: string; extensionId?: string };
   legs: RCCallLeg[];
+  recording?: { id: string; contentUri: string; type: string };
 }
 
 // ─── Extensions ───────────────────────────────────────────────────────────────

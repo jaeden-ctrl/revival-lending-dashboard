@@ -44,6 +44,57 @@ async function fetchDashboard(range: DateRange): Promise<DashboardKpis> {
   return res.json();
 }
 
+// ─── Call Row (with inline recording player) ──────────────────────────────────
+
+function CallRow({ call: c, isLast }: { call: CallDetail; isLast: boolean }) {
+  const [playing, setPlaying] = useState(false);
+
+  return (
+    <>
+      <tr style={{ borderBottom: !playing && isLast ? "none" : "1px solid #1a1a1a" }}>
+        <td className="py-2 pl-4 pr-3" style={{ color: "var(--color-text)" }}>{fmtTime(c.startTime)}</td>
+        <td className="py-2 px-3" style={{ color: "var(--color-muted)" }}>{fmtPhone(c.from)}</td>
+        <td className="py-2 px-3">
+          <span className="px-2 py-0.5 rounded text-xs" style={{ background: "#1a1a1a", color: GOLD, border: "1px solid #2a2a2a" }}>
+            {c.queue || "—"}
+          </span>
+        </td>
+        <td className="py-2 px-3 text-right" style={{ color: "var(--color-muted)" }}>{fmt(c.durationSec)}</td>
+        <td className="py-2 pr-4 pl-3 text-center">
+          {c.recordingId ? (
+            <button
+              onClick={() => setPlaying(!playing)}
+              className="px-2 py-0.5 rounded text-xs font-medium transition-all"
+              style={{
+                background: playing ? GOLD : "#1a1a1a",
+                color: playing ? "#0A0A0A" : GOLD,
+                border: `1px solid ${playing ? GOLD : "#2a2a2a"}`,
+              }}
+            >
+              {playing ? "▼" : "▶"}
+            </button>
+          ) : (
+            <span style={{ color: "#333" }}>—</span>
+          )}
+        </td>
+      </tr>
+      {playing && c.recordingId && (
+        <tr style={{ borderBottom: isLast ? "none" : "1px solid #1a1a1a" }}>
+          <td colSpan={5} className="px-4 pb-3 pt-1">
+            <audio
+              controls
+              autoPlay
+              src={`/api/ringcentral/recording/${c.recordingId}`}
+              style={{ width: "100%", height: 32, accentColor: GOLD }}
+              onEnded={() => setPlaying(false)}
+            />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 // ─── Drill-down Row ───────────────────────────────────────────────────────────
 
 function LORow({ lo, isLast }: { lo: LOInboundStats; isLast: boolean }) {
@@ -97,29 +148,13 @@ function LORow({ lo, isLast }: { lo: LOInboundStats; isLast: boolean }) {
                       <th className="py-2 pl-4 pr-3 text-left font-medium uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>Time</th>
                       <th className="py-2 px-3 text-left font-medium uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>From</th>
                       <th className="py-2 px-3 text-left font-medium uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>Queue</th>
-                      <th className="py-2 pr-4 pl-3 text-right font-medium uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>Duration</th>
+                      <th className="py-2 px-3 text-right font-medium uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>Duration</th>
+                      <th className="py-2 pr-4 pl-3 text-center font-medium uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>Rec</th>
                     </tr>
                   </thead>
                   <tbody>
                     {lo.calls.map((c: CallDetail, i: number) => (
-                      <tr
-                        key={c.id}
-                        style={{ borderBottom: i < lo.calls.length - 1 ? "1px solid #1a1a1a" : "none" }}
-                      >
-                        <td className="py-2 pl-4 pr-3" style={{ color: "var(--color-text)" }}>{fmtTime(c.startTime)}</td>
-                        <td className="py-2 px-3" style={{ color: "var(--color-muted)" }}>{fmtPhone(c.from)}</td>
-                        <td className="py-2 px-3">
-                          <span
-                            className="px-2 py-0.5 rounded text-xs"
-                            style={{ background: "#1a1a1a", color: GOLD, border: "1px solid #2a2a2a" }}
-                          >
-                            {c.queue || "—"}
-                          </span>
-                        </td>
-                        <td className="py-2 pr-4 pl-3 text-right" style={{ color: "var(--color-muted)" }}>
-                          {fmt(c.durationSec)}
-                        </td>
-                      </tr>
+                      <CallRow key={c.id} call={c} isLast={i === lo.calls.length - 1} />
                     ))}
                   </tbody>
                 </table>

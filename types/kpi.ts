@@ -28,8 +28,9 @@ export interface CallDetail {
   startTime: string;
   durationSec: number;
   result: string; // "Answered" | "Missed" | "Voicemail"
-  queue: string;  // "Get That Bag" | "Fresh Leads"
+  queue: string;
   from: string;
+  recordingId?: string;
 }
 
 // ─── Outbound KPIs ───────────────────────────────────────────────────────────

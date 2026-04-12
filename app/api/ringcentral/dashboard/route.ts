@@ -164,6 +164,7 @@ export async function GET(request: NextRequest) {
             result: "Answered",
             queue: c.queueName,
             from: c.from?.phoneNumber ?? c.from?.name ?? "Unknown",
+            recordingId: c.recording?.id,
           })),
         };
       })
