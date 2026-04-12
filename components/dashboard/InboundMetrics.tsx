@@ -218,28 +218,53 @@ export function InboundMetrics({ queryKey, range, preset }: { queryKey: string; 
 
       {data && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Volume chart */}
-          <div className="rounded-xl p-5" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
-            <h3 className="text-xs font-medium uppercase tracking-widest mb-4" style={{ color: "var(--color-muted)" }}>
-              {preset === "today" || preset === "yesterday" ? "Inbound Volume — Hourly" : "Inbound Volume — Daily"}
-            </h3>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={data.hourlyVolume} barSize={12}>
-                <CartesianGrid vertical={false} stroke="#1F1F1F" />
-                <XAxis dataKey="hour" tick={{ fill: "#6B6B6B", fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: "#6B6B6B", fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                <Tooltip
-                  cursor={{ fill: SURFACE_2 }}
-                  contentStyle={{ background: "#141414", border: "1px solid #1F1F1F", borderRadius: 8, color: "#F5F5F5", fontSize: 12 }}
-                  labelStyle={{ color: GOLD }}
-                />
-                <Bar dataKey="calls" radius={[4, 4, 0, 0]}>
-                  {data.hourlyVolume.map((entry, i) => (
-                    <Cell key={i} fill={entry.calls > 0 ? GOLD : "#2a2010"} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+          {/* Volume charts — daily + hourly stacked */}
+          <div className="flex flex-col gap-4">
+            <div className="rounded-xl p-5" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+              <h3 className="text-xs font-medium uppercase tracking-widest mb-4" style={{ color: "var(--color-muted)" }}>
+                Inbound Volume — Daily
+              </h3>
+              <ResponsiveContainer width="100%" height={150}>
+                <BarChart data={data.dailyVolume} barSize={14}>
+                  <CartesianGrid vertical={false} stroke="#1F1F1F" />
+                  <XAxis dataKey="hour" tick={{ fill: "#6B6B6B", fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#6B6B6B", fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip
+                    cursor={{ fill: SURFACE_2 }}
+                    contentStyle={{ background: "#141414", border: "1px solid #1F1F1F", borderRadius: 8, color: "#F5F5F5", fontSize: 12 }}
+                    labelStyle={{ color: GOLD }}
+                  />
+                  <Bar dataKey="calls" radius={[4, 4, 0, 0]}>
+                    {data.dailyVolume.map((entry, i) => (
+                      <Cell key={i} fill={entry.calls > 0 ? GOLD : "#2a2010"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="rounded-xl p-5" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+              <h3 className="text-xs font-medium uppercase tracking-widest mb-4" style={{ color: "var(--color-muted)" }}>
+                Inbound Volume — By Hour of Day
+              </h3>
+              <ResponsiveContainer width="100%" height={150}>
+                <BarChart data={data.hourlyVolume} barSize={12}>
+                  <CartesianGrid vertical={false} stroke="#1F1F1F" />
+                  <XAxis dataKey="hour" tick={{ fill: "#6B6B6B", fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#6B6B6B", fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip
+                    cursor={{ fill: SURFACE_2 }}
+                    contentStyle={{ background: "#141414", border: "1px solid #1F1F1F", borderRadius: 8, color: "#F5F5F5", fontSize: 12 }}
+                    labelStyle={{ color: GOLD }}
+                  />
+                  <Bar dataKey="calls" radius={[4, 4, 0, 0]}>
+                    {data.hourlyVolume.map((entry, i) => (
+                      <Cell key={i} fill={entry.calls > 0 ? GOLD : "#2a2010"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
 
           {/* LO Table with drill-down */}

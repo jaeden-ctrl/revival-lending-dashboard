@@ -37,39 +37,39 @@ function isMissed(result: string) {
   return ["Missed", "Voicemail", "HangUp", "Declined"].includes(result);
 }
 
-function buildVolume(records: { startTime: string }[], dateFrom: Date, dateTo: Date): HourlyVolume[] {
-  const daysDiff = (dateTo.getTime() - dateFrom.getTime()) / (1000 * 60 * 60 * 24);
-
-  if (daysDiff <= 1.5) {
-    const counts: Record<number, number> = {};
-    for (const r of records) {
-      const h = parseInt(
-        new Intl.DateTimeFormat("en-US", {
-          timeZone: TZ, hour: "numeric", hour12: false, hourCycle: "h23",
-        }).format(new Date(r.startTime))
-      );
-      counts[h] = (counts[h] ?? 0) + 1;
-    }
-    return Array.from({ length: 15 }, (_, i) => i + 7).map((h) => ({
-      hour: h === 12 ? "12 PM" : h < 12 ? `${h} AM` : `${h - 12} PM`,
-      calls: counts[h] ?? 0,
-    }));
-  } else {
-    const counts: Record<string, number> = {};
-    for (const r of records) {
-      const d = new Date(r.startTime).toLocaleDateString("en-CA", { timeZone: TZ });
-      counts[d] = (counts[d] ?? 0) + 1;
-    }
-    const result: HourlyVolume[] = [];
-    const cursor = new Date(dateFrom);
-    while (cursor < dateTo) {
-      const dateStr = cursor.toLocaleDateString("en-CA", { timeZone: TZ });
-      const label = cursor.toLocaleDateString("en-US", { timeZone: TZ, month: "short", day: "numeric" });
-      result.push({ hour: label, calls: counts[dateStr] ?? 0 });
-      cursor.setUTCDate(cursor.getUTCDate() + 1);
-    }
-    return result;
+/** Calls aggregated by hour-of-day (7am–9pm Pacific), across all days in range. */
+function buildHourlyVolume(records: { startTime: string }[]): HourlyVolume[] {
+  const counts: Record<number, number> = {};
+  for (const r of records) {
+    const h = parseInt(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone: TZ, hour: "numeric", hour12: false, hourCycle: "h23",
+      }).format(new Date(r.startTime))
+    );
+    counts[h] = (counts[h] ?? 0) + 1;
   }
+  return Array.from({ length: 15 }, (_, i) => i + 7).map((h) => ({
+    hour: h === 12 ? "12 PM" : h < 12 ? `${h} AM` : `${h - 12} PM`,
+    calls: counts[h] ?? 0,
+  }));
+}
+
+/** Calls by calendar day (Pacific), one bar per day in the range. */
+function buildDailyVolume(records: { startTime: string }[], dateFrom: Date, dateTo: Date): HourlyVolume[] {
+  const counts: Record<string, number> = {};
+  for (const r of records) {
+    const d = new Date(r.startTime).toLocaleDateString("en-CA", { timeZone: TZ });
+    counts[d] = (counts[d] ?? 0) + 1;
+  }
+  const result: HourlyVolume[] = [];
+  const cursor = new Date(dateFrom);
+  while (cursor < dateTo) {
+    const dateStr = cursor.toLocaleDateString("en-CA", { timeZone: TZ });
+    const label = cursor.toLocaleDateString("en-US", { timeZone: TZ, month: "short", day: "numeric" });
+    result.push({ hour: label, calls: counts[dateStr] ?? 0 });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return result;
 }
 
 export async function GET(request: NextRequest) {
@@ -178,7 +178,8 @@ export async function GET(request: NextRequest) {
         avgTalkTimeSec: answeredIn.length > 0 ? Math.round(totalInTalk / answeredIn.length) : 0,
       },
       byLO,
-      hourlyVolume: buildVolume(allInbound, dateFrom, dateTo),
+      hourlyVolume: buildHourlyVolume(allInbound),
+      dailyVolume: buildDailyVolume(allInbound, dateFrom, dateTo),
       lastUpdated: now.toISOString(),
     };
 

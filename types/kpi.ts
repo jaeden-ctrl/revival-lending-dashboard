@@ -3,7 +3,8 @@
 export interface InboundKpis {
   period: PeriodStats;
   byLO: LOInboundStats[];
-  hourlyVolume: HourlyVolume[];
+  hourlyVolume: HourlyVolume[];  // calls aggregated by hour-of-day (7am–9pm)
+  dailyVolume: HourlyVolume[];   // calls by calendar day
   lastUpdated: string;
 }
 

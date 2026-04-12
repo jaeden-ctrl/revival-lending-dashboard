@@ -119,6 +119,7 @@ export async function GET() {
       },
       byLO,
       hourlyVolume: buildHourly(allCalls),
+      dailyVolume: [],
       lastUpdated: new Date().toISOString(),
     };
 
