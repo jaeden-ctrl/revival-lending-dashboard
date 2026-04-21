@@ -24,29 +24,40 @@ function tomorrowDateStr() {
 
 export function DashboardContent() {
   const queryClient = useQueryClient();
+
+  // Active preset driving the current data
   const [preset, setPreset] = useState<Preset>("today");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
+
+  // Draft values shown in the inputs — don't drive the query until Enter is clicked
+  const [draftFrom, setDraftFrom] = useState("");
+  const [draftTo, setDraftTo] = useState("");
+
+  // Committed values — only update when Enter is clicked
+  const [committedFrom, setCommittedFrom] = useState("");
+  const [committedTo, setCommittedTo] = useState("");
 
   const range: DateRange =
-    preset === "custom" && customFrom && customTo
-      ? getCustomRange(customFrom, customTo)
+    preset === "custom" && committedFrom && committedTo
+      ? getCustomRange(committedFrom, committedTo)
       : getRange(preset === "custom" ? "today" : preset);
 
-  // Unique query key — for custom use the date strings, for presets use the preset name
-  const queryKey = preset === "custom" ? `custom:${customFrom}:${customTo}` : preset;
+  const queryKey = preset === "custom" ? `custom:${committedFrom}:${committedTo}` : preset;
+
+  const canEnter = draftFrom && draftTo;
 
   function handlePreset(p: Preset) {
     setPreset(p);
-    if (p !== "custom") {
-      queryClient.invalidateQueries({ queryKey: ["rc-dashboard", p] });
-    }
+    queryClient.invalidateQueries({ queryKey: ["rc-dashboard", p] });
   }
 
-  function handleApplyCustom() {
-    if (customFrom && customTo) {
-      queryClient.invalidateQueries({ queryKey: ["rc-dashboard", queryKey] });
-    }
+  function handleEnter() {
+    if (!canEnter) return;
+    setCommittedFrom(draftFrom);
+    setCommittedTo(draftTo);
+    setPreset("custom");
+    // key will update after state flush; invalidate the new key
+    const newKey = `custom:${draftFrom}:${draftTo}`;
+    queryClient.invalidateQueries({ queryKey: ["rc-dashboard", newKey] });
   }
 
   function handleRefresh() {
@@ -81,47 +92,46 @@ export function DashboardContent() {
           <div className="flex items-center gap-1.5">
             <input
               type="date"
-              value={customFrom}
+              value={draftFrom}
               max={todayDateStr()}
-              onChange={(e) => {
-                setCustomFrom(e.target.value);
-                setPreset("custom");
-              }}
+              onChange={(e) => setDraftFrom(e.target.value)}
               className="rounded px-2 py-1 text-xs"
               style={{
                 background: "var(--color-surface)",
                 border: `1px solid ${preset === "custom" ? GOLD : "var(--color-border)"}`,
-                color: customFrom ? "var(--color-text)" : "var(--color-muted)",
+                color: draftFrom ? "var(--color-text)" : "var(--color-muted)",
                 colorScheme: "dark",
               }}
             />
             <span className="text-xs" style={{ color: "var(--color-muted)" }}>to</span>
             <input
               type="date"
-              value={customTo}
-              min={customFrom || undefined}
+              value={draftTo}
+              min={draftFrom || undefined}
               max={tomorrowDateStr()}
-              onChange={(e) => {
-                setCustomTo(e.target.value);
-                setPreset("custom");
-              }}
+              onChange={(e) => setDraftTo(e.target.value)}
               className="rounded px-2 py-1 text-xs"
               style={{
                 background: "var(--color-surface)",
                 border: `1px solid ${preset === "custom" ? GOLD : "var(--color-border)"}`,
-                color: customTo ? "var(--color-text)" : "var(--color-muted)",
+                color: draftTo ? "var(--color-text)" : "var(--color-muted)",
                 colorScheme: "dark",
               }}
             />
-            {preset === "custom" && customFrom && customTo && (
-              <button
-                onClick={handleApplyCustom}
-                className="px-3 py-1 rounded text-xs font-medium transition-all"
-                style={{ background: GOLD, color: "#0A0A0A", border: `1px solid ${GOLD}` }}
-              >
-                Apply
-              </button>
-            )}
+            <button
+              onClick={handleEnter}
+              disabled={!canEnter}
+              className="px-3 py-1 rounded text-xs font-medium transition-all"
+              style={{
+                background: canEnter ? GOLD : "var(--color-surface)",
+                color: canEnter ? "#0A0A0A" : "var(--color-muted)",
+                border: `1px solid ${canEnter ? GOLD : "var(--color-border)"}`,
+                cursor: canEnter ? "pointer" : "not-allowed",
+                opacity: canEnter ? 1 : 0.5,
+              }}
+            >
+              Enter
+            </button>
           </div>
         </div>
 
