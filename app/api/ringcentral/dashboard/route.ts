@@ -123,16 +123,28 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    // Deduplicate by call ID — same call can appear in both queue logs
+    // Step 1: deduplicate by call ID — same call can appear in both queue logs
     const seenIds = new Set<string>();
-    const allInbound = queueCallSets.flat().filter((c) => {
+    const deduped = queueCallSets.flat().filter((c) => {
       if (seenIds.has(c.id)) return false;
       seenIds.add(c.id);
       return true;
     });
 
-    // Sort ascending so call detail lists are in chronological order
-    allInbound.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+    // Sort ascending (earliest call wins in the per-caller-per-day dedup below)
+    deduped.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+    // Step 2: deduplicate by (caller phone, Pacific calendar day) — one unique caller per day
+    const seenCallerDays = new Set<string>();
+    const allInbound = deduped.filter((c) => {
+      const phone = c.from?.phoneNumber;
+      if (!phone) return true; // no number — always include
+      const day = new Date(c.startTime).toLocaleDateString("en-CA", { timeZone: TZ });
+      const key = `${phone}|${day}`;
+      if (seenCallerDays.has(key)) return false;
+      seenCallerDays.add(key);
+      return true;
+    });
 
     const answeredIn = allInbound.filter((c) => !isMissed(c.result));
     const missedIn = allInbound.filter((c) => isMissed(c.result));
