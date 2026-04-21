@@ -1,4 +1,4 @@
-export type Preset = "today" | "yesterday" | "week" | "7days" | "month" | "custom";
+export type Preset = "today" | "yesterday" | "week" | "lastweek" | "7days" | "month" | "custom";
 
 const TZ = "America/Los_Angeles";
 
@@ -42,6 +42,21 @@ export function getRange(preset: Preset): DateRange {
       return { from: pacificMidnightISO(wStr), to: now.toISOString(), label: "This Week" };
     }
 
+    case "lastweek": {
+      const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const dow = weekdays.indexOf(
+        new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short" }).format(now)
+      );
+      const daysToLastMonday = dow === 0 ? 13 : dow + 6;
+      const lastMonday = new Date(now);
+      lastMonday.setDate(lastMonday.getDate() - daysToLastMonday);
+      const lastSunday = new Date(lastMonday);
+      lastSunday.setDate(lastSunday.getDate() + 7);
+      const lwStr = lastMonday.toLocaleDateString("en-CA", { timeZone: TZ });
+      const lwEndStr = lastSunday.toLocaleDateString("en-CA", { timeZone: TZ });
+      return { from: pacificMidnightISO(lwStr), to: pacificMidnightISO(lwEndStr), label: "Last Week" };
+    }
+
     case "7days": {
       const d = new Date(now);
       d.setDate(d.getDate() - 6);
@@ -71,6 +86,7 @@ export const PRESETS: { key: Preset; label: string }[] = [
   { key: "today",     label: "Today"      },
   { key: "yesterday", label: "Yesterday"  },
   { key: "week",      label: "This Week"  },
+  { key: "lastweek",  label: "Last Week"  },
   { key: "7days",     label: "7 Days"     },
   { key: "month",     label: "Month"      },
 ];
