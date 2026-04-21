@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { InboundMetrics } from "@/components/dashboard/InboundMetrics";
 import { LOMetrics } from "@/components/dashboard/LOMetrics";
+import { StateBreakdown } from "@/components/dashboard/StateBreakdown";
 import type { Preset, DateRange } from "@/lib/dateRange";
 import { PRESETS, getRange, getCustomRange } from "@/lib/dateRange";
 
@@ -11,6 +12,14 @@ const GOLD = "#C48B1F";
 
 function todayDateStr() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
+}
+
+// Used as the max for the "to" picker — one day past today so today is clearly
+// within range (not at the boundary). getCustomRange() caps the actual query at now.
+function tomorrowDateStr() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
 }
 
 export function DashboardContent() {
@@ -90,7 +99,8 @@ export function DashboardContent() {
             <input
               type="date"
               value={customTo}
-              max={todayDateStr()}
+              min={customFrom || undefined}
+              max={tomorrowDateStr()}
               onChange={(e) => {
                 setCustomTo(e.target.value);
                 setPreset("custom");
@@ -133,6 +143,7 @@ export function DashboardContent() {
 
       <InboundMetrics queryKey={queryKey} range={range} preset={preset} />
       <LOMetrics queryKey={queryKey} range={range} />
+      <StateBreakdown queryKey={queryKey} range={range} />
     </div>
   );
 }

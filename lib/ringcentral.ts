@@ -227,7 +227,10 @@ async function fetchAllPages<T>(
   params: URLSearchParams
 ): Promise<T[]> {
   const res = await fetchWithToken(`${url}?${params}`);
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`RingCentral API ${res.status}: ${text.slice(0, 300)}`);
+  }
   const data = await res.json();
   const records: T[] = data.records ?? [];
 

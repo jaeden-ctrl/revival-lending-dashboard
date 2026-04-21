@@ -7,7 +7,8 @@ import {
   extractAgentFromLegs,
   type RCDetailedCallRecord,
 } from "@/lib/ringcentral";
-import type { InboundKpis, LOInboundStats, HourlyVolume, CallDetail } from "@/types/kpi";
+import { areaCodeToState } from "@/lib/areaCodes";
+import type { InboundKpis, LOInboundStats, HourlyVolume, CallDetail, StateVolume } from "@/types/kpi";
 
 export interface DashboardKpis {
   inbound: InboundKpis;
@@ -54,6 +55,19 @@ function buildHourlyVolume(records: { startTime: string }[]): HourlyVolume[] {
   }));
 }
 
+/** Calls grouped by US state (derived from caller area code). */
+function buildByState(records: { from?: { phoneNumber?: string } }[]): StateVolume[] {
+  const counts: Record<string, number> = {};
+  for (const r of records) {
+    const phone = r.from?.phoneNumber ?? "";
+    const state = areaCodeToState(phone);
+    counts[state] = (counts[state] ?? 0) + 1;
+  }
+  return Object.entries(counts)
+    .map(([state, calls]) => ({ state, calls }))
+    .sort((a, b) => b.calls - a.calls);
+}
+
 /** Calls by calendar day (Pacific), one bar per day in the range. */
 function buildDailyVolume(records: { startTime: string }[], dateFrom: Date, dateTo: Date): HourlyVolume[] {
   const counts: Record<string, number> = {};
@@ -81,7 +95,10 @@ export async function GET(request: NextRequest) {
   const dateFrom = fromParam ? new Date(fromParam) : pacificTodayStart();
   const dateTo = toParam ? new Date(toParam) : now;
 
-  const cacheKey = `${dateFrom.toISOString()}|${dateTo.toISOString().slice(0, 13)}`;
+  // For rolling "to=now" queries, round to the hour so the cache actually hits.
+  // For explicit custom date ranges, use full precision so different to-dates don't collide.
+  const toKey = toParam ? dateTo.toISOString() : dateTo.toISOString().slice(0, 13);
+  const cacheKey = `${dateFrom.toISOString()}|${toKey}`;
   const cached = cacheMap.get(cacheKey);
   if (cached && Date.now() - cached.cachedAt < CACHE_TTL) {
     return NextResponse.json(cached.data);
@@ -106,25 +123,16 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    // Step 1: deduplicate by call ID (same call can appear in both queue logs)
+    // Deduplicate by call ID — same call can appear in both queue logs
     const seenIds = new Set<string>();
-    const deduped = queueCallSets.flat().filter((c) => {
+    const allInbound = queueCallSets.flat().filter((c) => {
       if (seenIds.has(c.id)) return false;
       seenIds.add(c.id);
       return true;
     });
 
-    // Step 2: deduplicate by caller phone number — keep only the first call per caller
-    // Sort ascending so the earliest call wins
-    deduped.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-    const seenCallers = new Set<string>();
-    const allInbound = deduped.filter((c) => {
-      const phone = c.from?.phoneNumber;
-      if (!phone) return true; // no number — can't deduplicate, always include
-      if (seenCallers.has(phone)) return false;
-      seenCallers.add(phone);
-      return true;
-    });
+    // Sort ascending so call detail lists are in chronological order
+    allInbound.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
     const answeredIn = allInbound.filter((c) => !isMissed(c.result));
     const missedIn = allInbound.filter((c) => isMissed(c.result));
@@ -170,6 +178,15 @@ export async function GET(request: NextRequest) {
       })
       .sort((a, b) => b.answered - a.answered);
 
+    const missedCallDetails: CallDetail[] = missedIn.map((c) => ({
+      id: c.id,
+      startTime: c.startTime,
+      durationSec: c.duration ?? 0,
+      result: c.result,
+      queue: (c as typeof c & { queueName: string }).queueName ?? "",
+      from: c.from?.phoneNumber ?? c.from?.name ?? "Unknown",
+    }));
+
     const inbound: InboundKpis = {
       period: {
         answered: answeredIn.length,
@@ -178,8 +195,10 @@ export async function GET(request: NextRequest) {
         avgTalkTimeSec: answeredIn.length > 0 ? Math.round(totalInTalk / answeredIn.length) : 0,
       },
       byLO,
+      missedCalls: missedCallDetails,
       hourlyVolume: buildHourlyVolume(allInbound),
       dailyVolume: buildDailyVolume(allInbound, dateFrom, dateTo),
+      byState: buildByState(allInbound),
       lastUpdated: now.toISOString(),
     };
 

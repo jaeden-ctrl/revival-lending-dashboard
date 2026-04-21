@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  Cell, CartesianGrid,
+  Cell, CartesianGrid, LabelList,
 } from "recharts";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { SectionSkeleton } from "@/components/ui/Loader";
@@ -167,6 +167,85 @@ function LORow({ lo, isLast }: { lo: LOInboundStats; isLast: boolean }) {
   );
 }
 
+// ─── Missed Calls Expandable Card ────────────────────────────────────────────
+
+function MissedCallsCard({ count, calls }: { count: number; calls: CallDetail[] }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      className="rounded-xl flex flex-col transition-all"
+      style={{
+        background: "var(--color-surface)",
+        border: "1px solid var(--color-border)",
+        gridColumn: "span 1",
+      }}
+    >
+      {/* Header — always visible */}
+      <button
+        onClick={() => calls.length > 0 && setOpen(!open)}
+        className="flex flex-col gap-1 p-5 text-left w-full"
+        style={{ cursor: calls.length > 0 ? "pointer" : "default" }}
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium uppercase tracking-widest" style={{ color: "var(--color-muted)" }}>
+            Missed
+          </span>
+          {calls.length > 0 && (
+            <span
+              className="text-xs transition-transform inline-block"
+              style={{ color: "var(--color-muted)", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}
+            >
+              ▶
+            </span>
+          )}
+        </div>
+        <span className="text-3xl font-bold leading-none" style={{ color: "var(--color-text)" }}>
+          {count}
+        </span>
+      </button>
+
+      {/* Dropdown */}
+      {open && calls.length > 0 && (
+        <div
+          className="overflow-hidden"
+          style={{ borderTop: "1px solid var(--color-border)" }}
+        >
+          <div className="overflow-y-auto" style={{ maxHeight: 280 }}>
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ borderBottom: "1px solid #1a1a1a", position: "sticky", top: 0, background: "var(--color-surface)", zIndex: 1 }}>
+                  <th className="py-2 pl-4 pr-2 text-left font-medium uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>Time</th>
+                  <th className="py-2 px-2 text-left font-medium uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>From</th>
+                  <th className="py-2 px-2 text-left font-medium uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>Queue</th>
+                  <th className="py-2 pr-4 pl-2 text-right font-medium uppercase tracking-wider" style={{ color: "var(--color-muted)" }}>Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {calls.map((c, i) => (
+                  <tr
+                    key={c.id}
+                    style={{ borderBottom: i === calls.length - 1 ? "none" : "1px solid #111" }}
+                  >
+                    <td className="py-2 pl-4 pr-2" style={{ color: "var(--color-text)" }}>{fmtTime(c.startTime)}</td>
+                    <td className="py-2 px-2" style={{ color: "var(--color-muted)" }}>{fmtPhone(c.from)}</td>
+                    <td className="py-2 px-2">
+                      <span className="px-1.5 py-0.5 rounded" style={{ background: "#1a1a1a", color: GOLD, border: "1px solid #2a2a2a" }}>
+                        {c.queue || "—"}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-4 pl-2 text-right" style={{ color: "#888" }}>{c.result}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function InboundMetrics({ queryKey, range, preset }: { queryKey: string; range: DateRange; preset: Preset }) {
@@ -211,7 +290,7 @@ export function InboundMetrics({ queryKey, range, preset }: { queryKey: string; 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           <KpiCard label="Total Inbound" value={data.period.total} highlight />
           <KpiCard label="Answered" value={data.period.answered} />
-          <KpiCard label="Missed" value={data.period.missed} />
+          <MissedCallsCard count={data.period.missed} calls={data.missedCalls ?? []} />
           <KpiCard label="Avg Talk Time" value={fmt(data.period.avgTalkTimeSec)} />
         </div>
       ) : null}
@@ -232,12 +311,14 @@ export function InboundMetrics({ queryKey, range, preset }: { queryKey: string; 
                   <Tooltip
                     cursor={{ fill: SURFACE_2 }}
                     contentStyle={{ background: "#141414", border: "1px solid #1F1F1F", borderRadius: 8, color: "#F5F5F5", fontSize: 12 }}
-                    labelStyle={{ color: GOLD }}
+                    labelFormatter={() => ""}
+                    formatter={(value: unknown) => [value as number, "Calls"]}
                   />
                   <Bar dataKey="calls" radius={[4, 4, 0, 0]}>
                     {data.dailyVolume.map((entry, i) => (
                       <Cell key={i} fill={entry.calls > 0 ? GOLD : "#2a2010"} />
                     ))}
+                    <LabelList dataKey="calls" position="top" style={{ fill: "#6B6B6B", fontSize: 10 }} formatter={(v: unknown) => (v as number) > 0 ? String(v) : ""} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -250,17 +331,19 @@ export function InboundMetrics({ queryKey, range, preset }: { queryKey: string; 
               <ResponsiveContainer width="100%" height={150}>
                 <BarChart data={data.hourlyVolume} barSize={12}>
                   <CartesianGrid vertical={false} stroke="#1F1F1F" />
-                  <XAxis dataKey="hour" tick={{ fill: "#6B6B6B", fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="hour" tick={{ fill: "#6B6B6B", fontSize: 9 }} axisLine={false} tickLine={false} interval={0} tickFormatter={(v: string) => v.replace(" AM", "a").replace(" PM", "p")} />
                   <YAxis tick={{ fill: "#6B6B6B", fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
                   <Tooltip
                     cursor={{ fill: SURFACE_2 }}
                     contentStyle={{ background: "#141414", border: "1px solid #1F1F1F", borderRadius: 8, color: "#F5F5F5", fontSize: 12 }}
-                    labelStyle={{ color: GOLD }}
+                    labelFormatter={() => ""}
+                    formatter={(value: unknown) => [value as number, "Calls"]}
                   />
                   <Bar dataKey="calls" radius={[4, 4, 0, 0]}>
                     {data.hourlyVolume.map((entry, i) => (
                       <Cell key={i} fill={entry.calls > 0 ? GOLD : "#2a2010"} />
                     ))}
+                    <LabelList dataKey="calls" position="top" style={{ fill: "#6B6B6B", fontSize: 10 }} formatter={(v: unknown) => (v as number) > 0 ? String(v) : ""} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>

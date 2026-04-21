@@ -3,9 +3,16 @@
 export interface InboundKpis {
   period: PeriodStats;
   byLO: LOInboundStats[];
+  missedCalls: CallDetail[];     // individual missed/voicemail/hangup records
   hourlyVolume: HourlyVolume[];  // calls aggregated by hour-of-day (7am–9pm)
   dailyVolume: HourlyVolume[];   // calls by calendar day
+  byState: StateVolume[];        // calls by US state (from area code)
   lastUpdated: string;
+}
+
+export interface StateVolume {
+  state: string;
+  calls: number;
 }
 
 export interface PeriodStats {

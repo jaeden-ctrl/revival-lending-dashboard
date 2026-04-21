@@ -1,35 +1,16 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-} from "recharts";
 import { SectionSkeleton } from "@/components/ui/Loader";
 import type { DashboardKpis } from "@/app/api/ringcentral/dashboard/route";
 import type { LOInboundStats } from "@/types/kpi";
 import type { DateRange } from "@/lib/dateRange";
 
 const GOLD = "#C48B1F";
-const GOLD_DIM = "#7A5811";
-const SURFACE_2 = "#1A1A1A";
-const DANGER = "#E05252";
-
 function fmt(sec: number) {
   if (!sec) return "—";
   const m = Math.floor(sec / 60), s = sec % 60;
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
-}
-
-function answerRate(answered: number, missed: number): string {
-  const total = answered + missed;
-  if (total === 0) return "—";
-  return `${Math.round((answered / total) * 100)}%`;
-}
-
-function firstLast(fullName: string): string {
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0];
-  return `${parts[0]} ${parts[parts.length - 1][0]}.`;
 }
 
 async function fetchDashboard(range: DateRange): Promise<DashboardKpis> {
@@ -47,10 +28,6 @@ async function fetchDashboard(range: DateRange): Promise<DashboardKpis> {
 // ─── LO Card ─────────────────────────────────────────────────────────────────
 
 function LOCard({ lo }: { lo: LOInboundStats }) {
-  const rate = lo.answered + lo.missed > 0
-    ? Math.round((lo.answered / (lo.answered + lo.missed)) * 100)
-    : null;
-
   return (
     <div
       className="rounded-xl p-5 flex flex-col gap-4"
@@ -67,21 +44,10 @@ function LOCard({ lo }: { lo: LOInboundStats }) {
         <div className="text-xs uppercase tracking-wider mt-1" style={{ color: "var(--color-muted)" }}>Answered</div>
       </div>
 
-      {/* Avg Talk / Answer Rate */}
-      <div className="grid grid-cols-2 gap-3 pt-1" style={{ borderTop: "1px solid var(--color-border)" }}>
-        <div>
-          <div className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--color-muted)" }}>Avg Talk</div>
-          <div className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{fmt(lo.avgTalkTimeSec)}</div>
-        </div>
-        <div>
-          <div className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--color-muted)" }}>Answer Rate</div>
-          <div
-            className="text-sm font-medium"
-            style={{ color: rate !== null && rate >= 80 ? GOLD : rate !== null && rate < 60 ? DANGER : "var(--color-text)" }}
-          >
-            {rate !== null ? `${rate}%` : "—"}
-          </div>
-        </div>
+      {/* Avg Talk */}
+      <div className="pt-1" style={{ borderTop: "1px solid var(--color-border)" }}>
+        <div className="text-xs uppercase tracking-wider mb-1" style={{ color: "var(--color-muted)" }}>Avg Talk</div>
+        <div className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{fmt(lo.avgTalkTimeSec)}</div>
       </div>
     </div>
   );
@@ -98,12 +64,6 @@ export function LOMetrics({ queryKey, range }: { queryKey: string; range: DateRa
   });
 
   const byLO = dashboard?.inbound.byLO ?? [];
-
-  // Chart data: abbreviated names for chart axis
-  const chartData = byLO.map((lo) => ({
-    name: firstLast(lo.name),
-    answered: lo.answered,
-  }));
 
   return (
     <section>
@@ -124,36 +84,10 @@ export function LOMetrics({ queryKey, range }: { queryKey: string; range: DateRa
       ) : byLO.length === 0 ? (
         <p className="text-sm" style={{ color: "var(--color-muted)" }}>No call data for this period.</p>
       ) : (
-        <div className="space-y-6">
-          {/* LO Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {byLO.map((lo) => (
-              <LOCard key={lo.extensionId} lo={lo} />
-            ))}
-          </div>
-
-          {/* Answered vs Missed bar chart */}
-          {chartData.length > 0 && (
-            <div className="rounded-xl p-5" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
-              <h3 className="text-xs font-medium uppercase tracking-widest mb-4" style={{ color: "var(--color-muted)" }}>
-                Calls by Loan Officer
-              </h3>
-              <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={chartData} barSize={18} barGap={4} barCategoryGap="30%">
-                  <XAxis dataKey="name" tick={{ fill: "#6B6B6B", fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: "#6B6B6B", fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip
-                    cursor={{ fill: SURFACE_2 }}
-                    contentStyle={{ background: "#141414", border: "1px solid #1F1F1F", borderRadius: 8, color: "#F5F5F5", fontSize: 12 }}
-                    labelStyle={{ color: GOLD }}
-                  />
-                  <Bar dataKey="answered" name="Answered" radius={[4, 4, 0, 0]}>
-                    {chartData.map((_, i) => <Cell key={i} fill={GOLD} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+          {byLO.map((lo) => (
+            <LOCard key={lo.extensionId} lo={lo} />
+          ))}
         </div>
       )}
     </section>

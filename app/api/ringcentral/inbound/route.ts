@@ -118,8 +118,10 @@ export async function GET() {
         avgTalkTimeSec: answered.length > 0 ? Math.round(totalTalk / answered.length) : 0,
       },
       byLO,
+      missedCalls: [],
       hourlyVolume: buildHourly(allCalls),
       dailyVolume: [],
+      byState: [],
       lastUpdated: new Date().toISOString(),
     };
 
