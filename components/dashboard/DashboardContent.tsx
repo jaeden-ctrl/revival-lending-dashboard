@@ -10,12 +10,8 @@ import { PRESETS, getRange, getCustomRange } from "@/lib/dateRange";
 
 const GOLD = "#C48B1F";
 
-function todayDateStr() {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
-}
-
-// Used as the max for the "to" picker — one day past today so today is clearly
-// within range (not at the boundary). getCustomRange() caps the actual query at now.
+// Both date inputs use tomorrow as max so today is never at the boundary.
+// getCustomRange() caps the actual API query at now regardless.
 function tomorrowDateStr() {
   const d = new Date();
   d.setDate(d.getDate() + 1);
@@ -93,7 +89,7 @@ export function DashboardContent() {
             <input
               type="date"
               value={draftFrom}
-              max={todayDateStr()}
+              max={tomorrowDateStr()}
               onChange={(e) => setDraftFrom(e.target.value)}
               className="rounded px-2 py-1 text-xs"
               style={{
