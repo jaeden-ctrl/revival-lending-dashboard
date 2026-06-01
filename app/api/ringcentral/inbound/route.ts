@@ -115,6 +115,7 @@ export async function GET() {
         answered: answered.length,
         missed: missed.length,
         total: allCalls.length,
+        uniqueCallers: new Set(allCalls.map((c) => c.from?.phoneNumber).filter(Boolean)).size,
         avgTalkTimeSec: answered.length > 0 ? Math.round(totalTalk / answered.length) : 0,
       },
       byLO,

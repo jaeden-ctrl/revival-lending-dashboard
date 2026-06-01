@@ -2,7 +2,13 @@ export type Preset = "today" | "yesterday" | "week" | "lastweek" | "7days" | "mo
 
 const TZ = "America/Los_Angeles";
 
-export interface DateRange { from: string; to: string; label: string }
+export interface DateRange {
+  from: string;
+  to: string;
+  label: string;
+  /** When true, `to` should be treated as "now" — callers should use the current time at fetch time, not the frozen render-time value. */
+  dynamic?: boolean;
+}
 
 function pacificMidnightISO(dateStr: string): string {
   const noonUTC = new Date(`${dateStr}T12:00:00Z`);
@@ -21,7 +27,7 @@ export function getRange(preset: Preset): DateRange {
 
   switch (preset) {
     case "today":
-      return { from: pacificMidnightISO(todayStr), to: now.toISOString(), label: "Today" };
+      return { from: pacificMidnightISO(todayStr), to: now.toISOString(), label: "Today", dynamic: true };
 
     case "yesterday": {
       const d = new Date(now);
@@ -39,7 +45,7 @@ export function getRange(preset: Preset): DateRange {
       const monday = new Date(now);
       monday.setDate(monday.getDate() - daysBack);
       const wStr = monday.toLocaleDateString("en-CA", { timeZone: TZ });
-      return { from: pacificMidnightISO(wStr), to: now.toISOString(), label: "This Week" };
+      return { from: pacificMidnightISO(wStr), to: now.toISOString(), label: "This Week", dynamic: true };
     }
 
     case "lastweek": {
@@ -61,15 +67,15 @@ export function getRange(preset: Preset): DateRange {
       const d = new Date(now);
       d.setDate(d.getDate() - 6);
       const wStr = d.toLocaleDateString("en-CA", { timeZone: TZ });
-      return { from: pacificMidnightISO(wStr), to: now.toISOString(), label: "Last 7 Days" };
+      return { from: pacificMidnightISO(wStr), to: now.toISOString(), label: "Last 7 Days", dynamic: true };
     }
 
     case "month": {
       const monthStart = `${todayStr.slice(0, 8)}01`;
-      return { from: pacificMidnightISO(monthStart), to: now.toISOString(), label: "This Month" };
+      return { from: pacificMidnightISO(monthStart), to: now.toISOString(), label: "This Month", dynamic: true };
     }
     default:
-      return { from: pacificMidnightISO(todayStr), to: now.toISOString(), label: "Today" };
+      return { from: pacificMidnightISO(todayStr), to: now.toISOString(), label: "Today", dynamic: true };
   }
 }
 

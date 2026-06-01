@@ -123,28 +123,15 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    // Step 1: deduplicate by call ID — same call can appear in both queue logs
+    // Deduplicate by call ID — same call can appear in both queue logs
     const seenIds = new Set<string>();
-    const deduped = queueCallSets.flat().filter((c) => {
+    const allInbound = queueCallSets.flat().filter((c) => {
       if (seenIds.has(c.id)) return false;
       seenIds.add(c.id);
       return true;
     });
 
-    // Sort ascending (earliest call wins in the per-caller-per-day dedup below)
-    deduped.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
-
-    // Step 2: deduplicate by (caller phone, Pacific calendar day) — one unique caller per day
-    const seenCallerDays = new Set<string>();
-    const allInbound = deduped.filter((c) => {
-      const phone = c.from?.phoneNumber;
-      if (!phone) return true; // no number — always include
-      const day = new Date(c.startTime).toLocaleDateString("en-CA", { timeZone: TZ });
-      const key = `${phone}|${day}`;
-      if (seenCallerDays.has(key)) return false;
-      seenCallerDays.add(key);
-      return true;
-    });
+    allInbound.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
     const answeredIn = allInbound.filter((c) => !isMissed(c.result));
     const missedIn = allInbound.filter((c) => isMissed(c.result));
@@ -171,13 +158,23 @@ export async function GET(request: NextRequest) {
 
     const byLO: LOInboundStats[] = Array.from(loMap.values())
       .map(({ name, extensionId, answered, missed }) => {
-        const talk = answered.reduce((s, c) => s + (c.duration ?? 0), 0);
+        // Deduplicate by caller phone number — keep the longest call per unique caller
+        const longestByPhone = new Map<string, typeof answered[0]>();
+        for (const call of answered) {
+          const phone = call.from?.phoneNumber ?? call.from?.name ?? "Unknown";
+          const existing = longestByPhone.get(phone);
+          if (!existing || (call.duration ?? 0) > (existing.duration ?? 0)) {
+            longestByPhone.set(phone, call);
+          }
+        }
+        const deduped = Array.from(longestByPhone.values());
+        const talk = deduped.reduce((s, c) => s + (c.duration ?? 0), 0);
         return {
           name, extensionId,
-          answered: answered.length,
+          answered: deduped.length,
           missed,
-          avgTalkTimeSec: answered.length > 0 ? Math.round(talk / answered.length) : 0,
-          calls: answered.map((c): CallDetail => ({
+          avgTalkTimeSec: deduped.length > 0 ? Math.round(talk / deduped.length) : 0,
+          calls: deduped.map((c): CallDetail => ({
             id: c.id,
             startTime: c.startTime,
             durationSec: c.duration ?? 0,
@@ -199,11 +196,16 @@ export async function GET(request: NextRequest) {
       from: c.from?.phoneNumber ?? c.from?.name ?? "Unknown",
     }));
 
+    const uniqueCallers = new Set(
+      allInbound.map((c) => c.from?.phoneNumber).filter(Boolean)
+    ).size;
+
     const inbound: InboundKpis = {
       period: {
         answered: answeredIn.length,
         missed: missedIn.length,
         total: allInbound.length,
+        uniqueCallers,
         avgTalkTimeSec: answeredIn.length > 0 ? Math.round(totalInTalk / answeredIn.length) : 0,
       },
       byLO,

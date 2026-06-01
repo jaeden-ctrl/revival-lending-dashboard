@@ -35,7 +35,9 @@ function fmtPhone(raw: string) {
 async function fetchDashboard(range: DateRange): Promise<DashboardKpis> {
   const url = new URL("/api/ringcentral/dashboard", window.location.origin);
   url.searchParams.set("from", range.from);
-  url.searchParams.set("to", range.to);
+  // Omit "to" for dynamic presets — server uses its current time, preventing
+  // auto-refetches from being stuck at the frozen render-time cutoff.
+  if (!range.dynamic) url.searchParams.set("to", range.to);
   const res = await fetch(url.toString());
   if (!res.ok) {
     const e = await res.json().catch(() => ({ error: "Unknown error" }));
@@ -288,8 +290,8 @@ export function InboundMetrics({ queryKey, range, preset }: { queryKey: string; 
         <SectionSkeleton count={4} />
       ) : data ? (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <KpiCard label="Total Inbound" value={data.period.total} highlight />
-          <KpiCard label="Answered" value={data.period.answered} />
+          <KpiCard label="Unique Callers" value={data.period.uniqueCallers} highlight />
+          <KpiCard label="Total Calls" value={data.period.total} />
           <MissedCallsCard count={data.period.missed} calls={data.missedCalls ?? []} />
           <KpiCard label="Avg Talk Time" value={fmt(data.period.avgTalkTimeSec)} />
         </div>

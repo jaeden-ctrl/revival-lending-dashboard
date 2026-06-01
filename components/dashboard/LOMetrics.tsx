@@ -16,7 +16,7 @@ function fmt(sec: number) {
 async function fetchDashboard(range: DateRange): Promise<DashboardKpis> {
   const url = new URL("/api/ringcentral/dashboard", window.location.origin);
   url.searchParams.set("from", range.from);
-  url.searchParams.set("to", range.to);
+  if (!range.dynamic) url.searchParams.set("to", range.to);
   const res = await fetch(url.toString());
   if (!res.ok) {
     const e = await res.json().catch(() => ({ error: "Unknown error" }));

@@ -37,16 +37,11 @@ export default function DashboardPage() {
           <DashboardContent />
 
           {/* Coming Soon */}
-          <section className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <section>
             <ComingSoonCard
               title="Lead Pipeline"
               source="GoHighLevel"
               description="Lead volume, pipeline stages, source breakdown, and conversion rates."
-            />
-            <ComingSoonCard
-              title="Loan Activity"
-              source="ARIVE LOS"
-              description="Loans in process, funded volume, stage tracking, and closings."
             />
           </section>
         </main>

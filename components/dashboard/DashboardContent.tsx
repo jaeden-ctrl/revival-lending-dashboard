@@ -1,28 +1,47 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { InboundMetrics } from "@/components/dashboard/InboundMetrics";
 import { LOMetrics } from "@/components/dashboard/LOMetrics";
 import { StateBreakdown } from "@/components/dashboard/StateBreakdown";
+import { ARIVEMetrics } from "@/components/dashboard/ARIVEMetrics";
 import type { Preset, DateRange } from "@/lib/dateRange";
 import { PRESETS, getRange, getCustomRange } from "@/lib/dateRange";
 
 const GOLD = "#C48B1F";
+const TZ = "America/Los_Angeles";
 
-// Both date inputs use tomorrow as max so today is never at the boundary.
-// getCustomRange() caps the actual API query at now regardless.
-function tomorrowDateStr() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d.toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
-}
+type Tab = "calls" | "loans";
 
 export function DashboardContent() {
   const queryClient = useQueryClient();
 
+  const [activeTab, setActiveTab] = useState<Tab>("calls");
+
   // Active preset driving the current data
   const [preset, setPreset] = useState<Preset>("today");
+
+  // maxDate is computed client-side only (useEffect) so it always reflects the
+  // real current date — never frozen to a stale build-time value from SSR.
+  const [maxDate, setMaxDate] = useState<string>("");
+  useEffect(() => {
+    function computeMax() {
+      const d = new Date();
+      d.setDate(d.getDate() + 1); // tomorrow — keeps today off the boundary
+      return d.toLocaleDateString("en-CA", { timeZone: TZ });
+    }
+    setMaxDate(computeMax());
+
+    // Refresh at midnight Pacific so the max rolls forward automatically
+    const now = new Date();
+    const msPacificMidnight =
+      new Date(computeMax() + "T00:00:00").getTime() -
+      now.getTime() +
+      7 * 60 * 60 * 1000; // rough offset; just needs to fire after midnight
+    const timer = setTimeout(() => setMaxDate(computeMax()), msPacificMidnight);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Draft values shown in the inputs — don't drive the query until Enter is clicked
   const [draftFrom, setDraftFrom] = useState("");
@@ -51,17 +70,37 @@ export function DashboardContent() {
     setCommittedFrom(draftFrom);
     setCommittedTo(draftTo);
     setPreset("custom");
-    // key will update after state flush; invalidate the new key
     const newKey = `custom:${draftFrom}:${draftTo}`;
     queryClient.invalidateQueries({ queryKey: ["rc-dashboard", newKey] });
   }
 
   function handleRefresh() {
     queryClient.invalidateQueries({ queryKey: ["rc-dashboard", queryKey] });
+    queryClient.invalidateQueries({ queryKey: ["arive-loans", queryKey] });
   }
 
   return (
-    <div className="space-y-12">
+    <div className="space-y-8">
+      {/* Tab switcher */}
+      <div
+        className="flex gap-1 p-1 rounded-lg w-fit"
+        style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}
+      >
+        {(["calls", "loans"] as Tab[]).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className="px-5 py-2 rounded text-xs font-semibold uppercase tracking-widest transition-all"
+            style={{
+              background: activeTab === tab ? GOLD : "transparent",
+              color: activeTab === tab ? "#0A0A0A" : "var(--color-muted)",
+            }}
+          >
+            {tab === "calls" ? "Call Dashboard" : "Loan Dashboard"}
+          </button>
+        ))}
+      </div>
+
       {/* Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -89,7 +128,7 @@ export function DashboardContent() {
             <input
               type="date"
               value={draftFrom}
-              max={tomorrowDateStr()}
+              max={maxDate || undefined}
               onChange={(e) => setDraftFrom(e.target.value)}
               className="rounded px-2 py-1 text-xs"
               style={{
@@ -104,7 +143,7 @@ export function DashboardContent() {
               type="date"
               value={draftTo}
               min={draftFrom || undefined}
-              max={tomorrowDateStr()}
+              max={maxDate || undefined}
               onChange={(e) => setDraftTo(e.target.value)}
               className="rounded px-2 py-1 text-xs"
               style={{
@@ -147,9 +186,15 @@ export function DashboardContent() {
         </div>
       </div>
 
-      <InboundMetrics queryKey={queryKey} range={range} preset={preset} />
-      <LOMetrics queryKey={queryKey} range={range} />
-      <StateBreakdown queryKey={queryKey} range={range} />
+      {activeTab === "calls" ? (
+        <div className="space-y-12">
+          <InboundMetrics queryKey={queryKey} range={range} preset={preset} />
+          <LOMetrics queryKey={queryKey} range={range} />
+          <StateBreakdown queryKey={queryKey} range={range} />
+        </div>
+      ) : (
+        <ARIVEMetrics queryKey={queryKey} range={range} />
+      )}
     </div>
   );
 }

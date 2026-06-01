@@ -19,6 +19,7 @@ export interface PeriodStats {
   answered: number;
   missed: number;
   total: number;
+  uniqueCallers: number; // distinct phone numbers across all calls in the period
   avgTalkTimeSec: number;
 }
 
