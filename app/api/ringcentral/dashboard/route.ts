@@ -123,13 +123,21 @@ export async function GET(request: NextRequest) {
       })
     );
 
-    // Deduplicate by call ID — same call can appear in both queue logs
-    const seenIds = new Set<string>();
-    const allInbound = queueCallSets.flat().filter((c) => {
-      if (seenIds.has(c.id)) return false;
-      seenIds.add(c.id);
-      return true;
-    });
+    // Deduplicate by call ID — same call can appear in multiple queue logs.
+    // When it does, prefer the entry whose queueId actually appears in the call's
+    // legs (true routing path) over one that inherited the call via overflow.
+    const callMap = new Map<string, (typeof queueCallSets)[0][0]>();
+    for (const call of queueCallSets.flat()) {
+      const existing = callMap.get(call.id);
+      if (!existing) {
+        callMap.set(call.id, call);
+        continue;
+      }
+      const thisInLegs  = call.legs.some((l) => l.extension?.id === call.queueId);
+      const existInLegs = existing.legs.some((l) => l.extension?.id === existing.queueId);
+      if (thisInLegs && !existInLegs) callMap.set(call.id, call);
+    }
+    const allInbound = Array.from(callMap.values());
 
     allInbound.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
