@@ -191,21 +191,17 @@ export async function getUserExtensions(): Promise<RCExtension[]> {
   return (data.records ?? []) as RCExtension[];
 }
 
-/** Find call queue extensions by name (case-insensitive) */
+/** Find call queue extensions by name (case-insensitive), across all extension types */
 export async function findQueuesByName(names: string[]): Promise<RCExtension[]> {
   const lower = names.map((n) => n.toLowerCase());
 
-  // Fetch Department and Queue types separately (RC doesn't support comma-separated types)
-  const [deptRes, queueRes] = await Promise.all([
-    fetchWithToken(`${RC_BASE}/restapi/v1.0/account/~/extension?type=Department&status=Enabled&perPage=250`),
-    fetchWithToken(`${RC_BASE}/restapi/v1.0/account/~/extension?type=Queue&status=Enabled&perPage=250`),
-  ]);
-
-  const deptRecords = deptRes.ok ? ((await deptRes.json()).records ?? []) as RCExtension[] : [];
-  const queueRecords = queueRes.ok ? ((await queueRes.json()).records ?? []) as RCExtension[] : [];
-
-  const all = [...deptRecords, ...queueRecords];
-  return all.filter((ext) => lower.includes(ext.name.toLowerCase()));
+  // Fetch all enabled extensions regardless of type — queues may be Department, Queue,
+  // IvrMenu, or other types depending on how they were set up in RingCentral Admin
+  const res = await fetchWithToken(
+    `${RC_BASE}/restapi/v1.0/account/~/extension?status=Enabled&perPage=250`
+  );
+  const records = res.ok ? ((await res.json()).records ?? []) as RCExtension[] : [];
+  return records.filter((ext) => lower.includes(ext.name.toLowerCase()));
 }
 
 // Queue ID cache — persist across warm invocations
