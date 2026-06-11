@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getTargetQueues, getQueueInboundCalls } from "@/lib/ringcentral";
+import { getAccessToken, getTargetQueues, getQueueInboundCalls } from "@/lib/ringcentral";
+
+const RC_BASE = "https://platform.ringcentral.com";
 
 const TZ = "America/Los_Angeles";
 
@@ -29,6 +31,22 @@ export async function GET(request: NextRequest) {
   const dateTo = toParam ? new Date(toParam) : now;
 
   try {
+    const token = await getAccessToken();
+
+    // Fetch every Department + Queue extension so we can see exact names
+    const [deptRes, queueRes] = await Promise.all([
+      fetch(`${RC_BASE}/restapi/v1.0/account/~/extension?type=Department&status=Enabled&perPage=250`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      fetch(`${RC_BASE}/restapi/v1.0/account/~/extension?type=Queue&status=Enabled&perPage=250`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    ]);
+    const allQueues = [
+      ...((deptRes.ok ? (await deptRes.json()).records : []) ?? []),
+      ...((queueRes.ok ? (await queueRes.json()).records : []) ?? []),
+    ] as { id: string; name: string; type: string }[];
+
     const queues = await getTargetQueues();
 
     const queueResults = await Promise.all(
@@ -66,7 +84,8 @@ export async function GET(request: NextRequest) {
         fromPacific: dateFrom.toLocaleDateString("en-US", { timeZone: TZ, weekday: "short", month: "short", day: "numeric" }),
         toPacific: dateTo.toLocaleDateString("en-US", { timeZone: TZ, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
       },
-      queues: queues.map((q) => ({ id: q.id, name: q.name })),
+      allQueuesInRingCentral: allQueues.map((q) => ({ id: q.id, name: q.name, type: q.type })),
+      matchedQueues: queues.map((q) => ({ id: q.id, name: q.name })),
       perQueue: queueResults.map(({ callIds: _, ...rest }) => rest),
       totalRawAcrossQueues: allIds.length,
       duplicateIdsAcrossQueues: duplicateIds,
