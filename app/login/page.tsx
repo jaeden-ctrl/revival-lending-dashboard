@@ -85,7 +85,7 @@ function LoginForm() {
                 placeholder="Enter team password"
                 required
                 autoComplete="current-password"
-                className="w-full rounded-lg px-4 py-3 text-sm outline-none transition-all"
+                className="w-full rounded-lg px-4 py-3 text-base outline-none transition-all"
                 style={{
                   background: "var(--color-surface-2)",
                   border: "1px solid var(--color-border)",
